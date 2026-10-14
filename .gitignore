@@ -4,3 +4,5 @@ build/
 
 .idea
 /tmp
+# skillcheck build output
+skill-validator/dist/
