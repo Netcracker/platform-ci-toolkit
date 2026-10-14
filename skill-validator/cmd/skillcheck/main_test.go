@@ -123,17 +123,27 @@ func TestNoArgumentsValidatesCurrentDirectoryAsOneSkill(t *testing.T) {
 	}
 }
 
-func TestNoArgumentsWithoutSkillFile(t *testing.T) {
-	// The current directory is a bundle root, but without arguments its
-	// subdirectories are not searched.
+func TestNoArgumentsSearchesBundle(t *testing.T) {
+	// The current directory is a bundle root: its skill subdirectories are
+	// validated, same as when "." is passed.
 	root := bundle(t)
 	t.Chdir(root)
 	out, errOut, code := execute(t)
-	if code != 2 || out != "" {
-		t.Errorf("code=%d out=%q", code, out)
+	dotOut, _, _ := execute(t, ".")
+	if code != 1 || !strings.Contains(out, "2 skills checked") || errOut != "" {
+		t.Errorf("code=%d out=%s err=%s", code, out, errOut)
 	}
-	if !strings.HasPrefix(errOut, "Error: no SKILL.md found in ./ ") || !strings.Contains(errOut, "pass its folder") {
-		t.Errorf("stderr = %q", errOut)
+	if out != dotOut {
+		t.Errorf("no arguments differs from \".\":\n%s\nvs\n%s", out, dotOut)
+	}
+}
+
+func TestNoArgumentsWithoutSkills(t *testing.T) {
+	t.Chdir(t.TempDir())
+	out, errOut, code := execute(t)
+	want := "Error: no skills found in . (expected SKILL.md or subdirectories containing SKILL.md)\n"
+	if code != 2 || out != "" || errOut != want {
+		t.Errorf("code=%d out=%q err=%q, want err %q", code, out, errOut, want)
 	}
 }
 

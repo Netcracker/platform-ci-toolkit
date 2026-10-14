@@ -35,9 +35,8 @@ ARGUMENTS
            root: each of its immediate subdirectories that contains a SKILL.md
            is validated as a skill; other subdirectories are ignored. It is an
            error when a folder holds no skills.
-           Without arguments the current directory is validated as one skill;
-           its subdirectories are not searched. To validate a bundle, pass its
-           folder.
+           Without arguments the current directory is used, as if "." was
+           passed.
 
 FLAGS
   -h, --help      Print this help and exit.
@@ -111,9 +110,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	folders := fs.Args()
-	implicit := len(folders) == 0
-	if implicit {
-		folders = []string{"./"}
+	if len(folders) == 0 {
+		folders = []string{"."}
 	}
 	targets, ok := resolve(folders, stderr)
 	if !ok {
@@ -123,7 +121,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var res report.Result
 	failed := false
 	for _, t := range targets {
-		if err := collect(t, implicit, &res); err != nil {
+		if err := collect(t, &res); err != nil {
 			fail(stderr, "%v", err)
 			failed = true
 		}
@@ -175,9 +173,8 @@ func resolve(folders []string, stderr io.Writer) ([]target, bool) {
 }
 
 // collect validates the skill or bundle at t and adds the outcome to res. It
-// returns an error when t holds no skill. implicit is true when t is the
-// default folder, which is only ever a single skill.
-func collect(t target, implicit bool, res *report.Result) error {
+// returns an error when t holds no skill.
+func collect(t target, res *report.Result) error {
 	var (
 		loaded  []*skills.Skill
 		skipped map[string]string
@@ -197,8 +194,6 @@ func collect(t target, implicit bool, res *report.Result) error {
 		} else {
 			loaded = []*skills.Skill{s}
 		}
-	case implicit:
-		return fmt.Errorf("no %s found in %s (without arguments the current directory is validated as one skill; to validate a bundle, pass its folder)", skills.SkillFile, t.arg)
 	default:
 		if loaded, skipped, err = skills.LoadAll(t.dir); err != nil {
 			return err

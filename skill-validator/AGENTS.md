@@ -26,7 +26,7 @@ go test ./internal/report -update      # rewrite golden files after an intended 
 
 - **Exit codes:** 0 all skills pass, 1 any skill failed or was skipped, 2 usage or operational error (missing folder, folder without skills, bad flag). Changing them means updating the help text and README too.
 - **The skill file is matched by exact case.** Always find it through `skills.FindSkillFile` (directory listing); `os.Stat("SKILL.md")` also matches `skill.md` on Windows and macOS.
-- **Folder semantics:** a folder with `SKILL.md` is one skill; otherwise it is a bundle root and only subdirectories with a skill file count. With no arguments only the current directory is checked, as one skill, never its subdirectories.
+- **Folder semantics:** a folder with `SKILL.md` is one skill; otherwise it is a bundle root and only subdirectories with a skill file count. With no arguments the current directory is used, exactly as if `.` was passed.
 - **Finding messages are a compatibility surface:** CI users read them. Change wording only deliberately, with tests.
 - **Colors are always on**, also when piped. Opt out only via `NO_COLOR` (non-empty) or `--no-color`. No TTY detection, and no OS-specific code or build tags: behavior must be identical on every platform.
 - **Output streams:** the report goes to stdout; `Error: ...` lines and usage problems go to stderr.

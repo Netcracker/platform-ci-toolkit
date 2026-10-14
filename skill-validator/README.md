@@ -14,7 +14,7 @@ skillcheck [flags] [folder ...]
 |----------|---------|
 | `folder` | A local folder to verify. May be repeated. A folder that contains a `SKILL.md` is validated as one skill. Any other folder is a bundle root: each of its immediate subdirectories that contains a `SKILL.md` is validated as a skill; other subdirectories are ignored. |
 
-Without arguments the current directory is validated as **one skill**; its subdirectories are not searched. To validate a bundle, pass its folder.
+Without arguments the current directory is used, as if `.` was passed: it is validated as one skill if it contains a `SKILL.md`, otherwise its subdirectories with a `SKILL.md` are validated.
 
 It is an error (exit code 2) when a folder holds no skills:
 
@@ -33,7 +33,7 @@ The skill file must be named exactly `SKILL.md`. A file such as `skill.md` is re
 Examples:
 
 ```sh
-skillcheck                          # the current directory is one skill
+skillcheck                          # the current directory, same as `skillcheck .`
 skillcheck ./skills                 # a bundle of skills
 skillcheck ./skills/code-review     # one skill
 skillcheck ./team-a/skills ./team-b/skills
