@@ -50,6 +50,11 @@ CHECKS
                  hyphens only; no leading, trailing or consecutive hyphens;
                  equal to the skill directory name.
   description    Required; not blank; at most 1024 characters.
+  optional       license, compatibility and allowed-tools must be strings;
+  fields         compatibility has at most 500 characters; metadata must map
+                 strings to strings; other frontmatter keys are reported.
+  body size      The SKILL.md body has at most 500 lines.
+  code fences    Every fenced code block in a Markdown file must be closed.
   layout         Every file a skill references must live inside the skill
                  folder: Markdown links must resolve there, and references
                  that point outside it are reported. At most 20 findings are

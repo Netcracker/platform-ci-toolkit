@@ -38,7 +38,7 @@ const SkillFile = "SKILL.md"
 // Meta is the SKILL.md YAML frontmatter as defined by the Agent Skills
 // specification. See https://agentskills.io/specification for
 // authoritative field definitions and constraints. Unknown keys are
-// ignored on read.
+// ignored on read; Validate reports them from Skill.Fields.
 type Meta struct {
 	// Name (required). Max 64 chars, lowercase letters/digits/hyphens
 	// only, must not start or end with `-` or contain `--`, and must
@@ -63,8 +63,10 @@ type Meta struct {
 
 // Skill is one loaded agent skill.
 type Skill struct {
-	Dir  string // Absolute path to the skill's directory.
-	Meta Meta   // Parsed SKILL.md frontmatter.
+	Dir       string         // Absolute path to the skill's directory.
+	Meta      Meta           // Parsed SKILL.md frontmatter.
+	Fields    map[string]any // Raw SKILL.md frontmatter, for type and unknown-key checks.
+	BodyLines int            // Lines of SKILL.md after the frontmatter.
 }
 
 // Name returns the skill's directory basename.
@@ -143,10 +145,25 @@ func Load(dir string) (*Skill, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	var meta Meta
-	if _, err := frontmatter.Parse(bytes.NewReader(data), &meta); err != nil {
+	body, err := frontmatter.Parse(bytes.NewReader(data), &meta)
+	if err != nil {
 		return nil, fmt.Errorf("parse frontmatter %s: %w", path, err)
 	}
-	return &Skill{Dir: dir, Meta: meta}, nil
+	var fields map[string]any
+	if _, err := frontmatter.Parse(bytes.NewReader(data), &fields); err != nil {
+		return nil, fmt.Errorf("parse frontmatter %s: %w", path, err)
+	}
+	return &Skill{Dir: dir, Meta: meta, Fields: fields, BodyLines: countLines(body)}, nil
+}
+
+// countLines returns the number of lines in b; a last line without a newline
+// counts as a line.
+func countLines(b []byte) int {
+	n := bytes.Count(b, []byte("\n"))
+	if len(b) > 0 && b[len(b)-1] != '\n' {
+		n++
+	}
+	return n
 }
 
 // LoadAll walks root and returns one *Skill per immediate subdirectory

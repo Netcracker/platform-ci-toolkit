@@ -1,33 +1,12 @@
 package skills
 
 import (
-	"bufio"
 	"fmt"
-	"io/fs"
 	"maps"
-	"net/url"
-	"os"
-	"path"
-	"path/filepath"
-	"regexp"
 	"slices"
-	"strings"
-	"unicode/utf8"
 )
 
-const (
-	maxNameLen        = 64
-	maxDescriptionLen = 1024
-
-	maxWarnings = 20 // Warnings kept per skill
-)
-
-var (
-	inlineLinkRe = regexp.MustCompile("!?\\[[^\\]]*\\]\\(\\s*<?([^)\\s>]+)>?(?:\\s+\"[^\"]*\")?\\s*\\)")
-	refDefRe     = regexp.MustCompile(`^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?`)
-	codeSpanRe   = regexp.MustCompile("`([^`\\n]+)`")
-	schemeRe     = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
-)
+const maxWarnings = 20 // Warnings kept per skill
 
 // Findings are the problems found in one skill.
 type Findings struct {
@@ -109,156 +88,7 @@ func Validate(s *Skill) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return limit(append(checkFrontmatter(s), refs...)), nil
-}
-
-func checkFrontmatter(s *Skill) []string {
-	var out []string
-
-	name := s.Meta.Name
-	switch {
-	case name == "":
-		out = append(out, "SKILL.md: name is missing")
-	default:
-		if utf8.RuneCountInString(name) > maxNameLen {
-			out = append(out, fmt.Sprintf("SKILL.md: name %q is longer than %d characters", name, maxNameLen))
-		}
-		if strings.IndexFunc(name, func(r rune) bool {
-			return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-')
-		}) >= 0 {
-			out = append(out, fmt.Sprintf("SKILL.md: name %q may contain only lowercase letters, digits and hyphens", name))
-		}
-		if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
-			out = append(out, fmt.Sprintf("SKILL.md: name %q must not start or end with a hyphen", name))
-		}
-		if strings.Contains(name, "--") {
-			out = append(out, fmt.Sprintf("SKILL.md: name %q must not contain consecutive hyphens", name))
-		}
-		if name != s.Name() {
-			out = append(out, fmt.Sprintf("SKILL.md: name %q must equal the directory name %q", name, s.Name()))
-		}
-	}
-
-	desc := strings.TrimSpace(s.Meta.Description)
-	switch {
-	case desc == "":
-		out = append(out, "SKILL.md: description is missing or empty")
-	case utf8.RuneCountInString(desc) > maxDescriptionLen:
-		out = append(out, fmt.Sprintf("SKILL.md: description is longer than %d characters", maxDescriptionLen))
-	}
-
-	return out
-}
-
-func checkReferences(s *Skill) ([]string, error) {
-	var out []string
-	err := filepath.WalkDir(s.Dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(s.Dir, p)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if d.IsDir() || !strings.EqualFold(filepath.Ext(p), ".md") {
-			return nil
-		}
-		warns, err := scanMarkdown(s, p, rel)
-		if err != nil {
-			return err
-		}
-		out = append(out, warns...)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("scan %s: %w", s.Dir, err)
-	}
-	return out, nil
-}
-
-// scanMarkdown reports the references of one Markdown file that do not resolve
-// inside the skill. Fenced code blocks are skipped: they hold commands and
-// samples, not links.
-func scanMarkdown(s *Skill, abs, rel string) ([]string, error) {
-	f, err := os.Open(abs)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", abs, err)
-	}
-	defer f.Close()
-
-	var out []string
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	inFence := false
-	for n := 1; sc.Scan(); n++ {
-		line := sc.Text()
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
-			continue
-		}
-		if inFence {
-			continue
-		}
-		report := func(ref string, linked bool) {
-			if w := checkRef(s, rel, ref, linked); w != "" {
-				out = append(out, fmt.Sprintf("%s:%d: %s", rel, n, w))
-			}
-		}
-		for _, m := range inlineLinkRe.FindAllStringSubmatch(line, -1) {
-			report(m[1], true)
-		}
-		if m := refDefRe.FindStringSubmatch(line); m != nil {
-			report(m[1], true)
-		}
-		for _, m := range codeSpanRe.FindAllStringSubmatch(line, -1) {
-			tok := m[1]
-			if strings.ContainsAny(tok, " \t") {
-				continue
-			}
-			// A code span is prose, so only the tokens that clearly name a
-			// repository file outside the skill are checked; a bare
-			// "/var/log/x" is a path inside the analyst's container.
-			if strings.HasPrefix(tok, "../") || strings.Contains(tok, ".apm/") {
-				report(tok, false)
-			}
-		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("read %s: %w", abs, err)
-	}
-	return out, nil
-}
-
-// checkRef returns the warning text for one reference, or "" when it resolves
-// inside the skill. linked is true for Markdown links, whose targets must also
-// exist.
-func checkRef(s *Skill, fromRel, ref string, linked bool) string {
-	target := ref
-	if i := strings.IndexAny(target, "#?"); i >= 0 {
-		target = target[:i]
-	}
-	if target == "" || schemeRe.MatchString(target) || strings.HasPrefix(target, "//") {
-		return ""
-	}
-	if u, err := url.PathUnescape(target); err == nil {
-		target = u
-	}
-	outside := fmt.Sprintf("%q points outside the skill folder; only .apm/skills/%s/ is installed", ref, s.Name())
-	if strings.HasPrefix(target, "/") {
-		return outside
-	}
-	resolved := path.Join(path.Dir(fromRel), target)
-	if resolved == ".." || strings.HasPrefix(resolved, "../") ||
-		strings.HasPrefix(resolved, ".apm/") || strings.Contains(resolved, "/.apm/") {
-		return outside
-	}
-	if !linked {
-		return ""
-	}
-	if _, err := os.Stat(filepath.Join(s.Dir, filepath.FromSlash(resolved))); err != nil {
-		return fmt.Sprintf("%q does not exist in the skill folder", ref)
-	}
-	return ""
+	out := checkFrontmatter(s)
+	out = append(out, checkBodySize(s)...)
+	return limit(append(out, refs...)), nil
 }

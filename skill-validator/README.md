@@ -77,16 +77,85 @@ Colors are always on, also when the output is piped, so that CI logs show them. 
 
 Every skill is checked against the Agent Skills specification and one layout rule.
 
-| Check | Rule |
-|-------|------|
-| `name` | Required. At most 64 characters. Lowercase letters, digits and hyphens only. Must not start or end with a hyphen, or contain consecutive hyphens. Must equal the skill directory name. |
-| `description` | Required, not blank, at most 1024 characters. |
-| Self-contained layout | Every file a skill references must live inside the skill folder. In every Markdown file of the skill, links, images and link definitions that point outside the folder (`../`, absolute paths, `.apm/`) are reported, as are links whose target does not exist inside the folder. Code spans that name a file outside the skill (starting with `../` or containing `.apm/`) are reported too. Fenced code blocks and links with a scheme (`https:`, `mailto:`) are ignored. |
-| Loading | The skill file must be named exactly `SKILL.md`; a differently cased name is reported. A `SKILL.md` whose frontmatter cannot be parsed is reported as skipped. Subdirectories of a bundle root without any skill file are not skills and are ignored. |
+Each item is one thing the tool verifies. Replace `x`, `y`, `k`, `N` and `<...>` with the values from your report.
+
+**Loading** (reported as `WARN`; the skill is skipped and not validated further)
+
+- [ ] The skill file is named exactly `SKILL.md`
+  - Error: `found "skill.md", but the file must be named SKILL.md`
+  - Fix: rename the file to `SKILL.md`.
+- [ ] The frontmatter is valid YAML and its fields have the right shape
+  - Error: `parse frontmatter SKILL.md: yaml: ...`
+  - Fix: correct the YAML between the `---` lines. This includes a list where a string is expected (`license: [a, b]`) and a string where a map is expected (`metadata: text`).
+
+Subdirectories of a bundle root without a skill file are not skills and are ignored.
+
+**`name`**
+
+- [ ] `name` is present
+  - Error: `SKILL.md: name is missing`
+  - Fix: add `name:` to the frontmatter.
+- [ ] `name` has at most 64 characters
+  - Error: `SKILL.md: name "x" is longer than 64 characters`
+  - Fix: shorten the name.
+- [ ] `name` uses only lowercase letters, digits and hyphens
+  - Error: `SKILL.md: name "x" may contain only lowercase letters, digits and hyphens`
+  - Fix: remove uppercase letters, underscores, spaces and other characters.
+- [ ] `name` does not start or end with a hyphen
+  - Error: `SKILL.md: name "x" must not start or end with a hyphen`
+  - Fix: remove the leading or trailing `-`.
+- [ ] `name` has no consecutive hyphens
+  - Error: `SKILL.md: name "x" must not contain consecutive hyphens`
+  - Fix: replace `--` with a single `-`.
+- [ ] `name` equals the skill directory name
+  - Error: `SKILL.md: name "x" must equal the directory name "y"`
+  - Fix: rename the folder or change `name` so that both are the same.
+
+**`description`**
+
+- [ ] `description` is present and not blank
+  - Error: `SKILL.md: description is missing or empty`
+  - Fix: add a non-blank `description:`.
+- [ ] `description` has at most 1024 characters
+  - Error: `SKILL.md: description is longer than 1024 characters`
+  - Fix: shorten it; move details into the body or into `references/`.
+
+**Optional frontmatter fields**
+
+- [ ] `license` and `allowed-tools` are strings
+  - Error: `SKILL.md: license must be a string` (same for `allowed-tools`)
+  - Fix: write the value as a string; quote it if YAML reads it as a number or boolean.
+- [ ] `compatibility` is a string of at most 500 characters
+  - Error: `SKILL.md: compatibility must be a string` or `SKILL.md: compatibility is longer than 500 characters`
+  - Fix: use a string and shorten it.
+- [ ] `metadata` maps strings to strings
+  - Error: `SKILL.md: metadata value of "k" must be a string` or `SKILL.md: metadata key K must be a string`
+  - Fix: quote the value or key (`version: "1"`).
+- [ ] The frontmatter has no unknown keys (allowed: `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`)
+  - Error: `SKILL.md: unknown frontmatter field "x"`
+  - Fix: remove the key, fix a typo in a known key, or move the data under `metadata:`.
+
+**`SKILL.md` body and Markdown files**
+
+- [ ] The `SKILL.md` body, the part after the frontmatter, has at most 500 lines
+  - Error: `SKILL.md: body has N lines, more than 500`
+  - Fix: move detail into files under `references/` and link them from `SKILL.md`.
+- [ ] Every fenced code block in every Markdown file is closed
+  - Error: `<file>:<line>: code fence is not closed` (`<line>` is the opening fence)
+  - Fix: add a closing fence of the same character (`` ` `` or `~`) that is at least as long as the opening one.
+
+**Self-contained layout** (everything a skill references must be inside the skill folder)
+
+- [ ] Links, images, link definitions and code spans stay inside the skill folder
+  - Error: `<file>:<line>: "ref" points outside the skill folder; only .apm/skills/<name>/ is installed`
+  - Fix: copy the file into the skill folder and link it with a relative path, or remove the reference. Targets starting with `../` or `/`, or containing `.apm/`, are reported; fenced code blocks and links with a scheme (`https:`, `mailto:`) are ignored.
+- [ ] Linked files exist
+  - Error: `<file>:<line>: "ref" does not exist in the skill folder`
+  - Fix: create the file or correct the link path.
 
 At most 20 problems are reported per skill; when there are more, the last line tells how many were left out.
 
-Not checked yet: `license`, `compatibility`, `metadata`, `allowed-tools` and the size of the `SKILL.md` body. Semantic checks of skill content are out of scope.
+Not checked yet: the size of the `SKILL.md` body in tokens (only lines are counted). Semantic checks of skill content are out of scope.
 
 ## Use in CI
 

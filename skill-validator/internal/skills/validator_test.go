@@ -219,3 +219,167 @@ func TestValidateAllAndWarningLines(t *testing.T) {
 		t.Errorf("lines = %q", lines)
 	}
 }
+
+func TestOptionalFieldChecks(t *testing.T) {
+	const head = "---\nname: s\ndescription: d\n"
+	tests := []struct {
+		name string
+		fm   string // extra frontmatter lines
+		want []string
+	}{
+		{"valid optional fields", "license: MIT\ncompatibility: needs git\nallowed-tools: Bash Read\nmetadata:\n  k: v\n", nil},
+		{"license not a string", "license: 123\n", []string{"SKILL.md: license must be a string"}},
+		{"allowed-tools not a string", "allowed-tools: 5\n", []string{"SKILL.md: allowed-tools must be a string"}},
+		{"compatibility 500", "compatibility: " + strings.Repeat("c", 500) + "\n", nil},
+		{"compatibility 501", "compatibility: " + strings.Repeat("c", 501) + "\n", []string{"SKILL.md: compatibility is longer than 500 characters"}},
+		{"metadata non-string value", "metadata:\n  b: 1\n  a: true\n  c: ok\n", []string{
+			`SKILL.md: metadata value of "a" must be a string`,
+			`SKILL.md: metadata value of "b" must be a string`,
+		}},
+		{"metadata non-string key", "metadata:\n  1: x\n", []string{"SKILL.md: metadata key 1 must be a string"}},
+		{"unknown fields sorted", "zeta: 1\nalpha: 2\n", []string{
+			`SKILL.md: unknown frontmatter field "alpha"`,
+			`SKILL.md: unknown frontmatter field "zeta"`,
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFiles(t, root, map[string]string{"s/SKILL.md": head + tc.fm + "---\n"})
+			got := validate(t, root, "s")
+			if !reflect.DeepEqual(got, tc.want) && (len(got) != 0 || len(tc.want) != 0) {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBodySize(t *testing.T) {
+	const front = "---\nname: s\ndescription: d\n---\n"
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"empty body", "", nil},
+		{"500 lines", strings.Repeat("x\n", 500), nil},
+		{"500 lines without final newline", strings.Repeat("x\n", 499) + "x", nil},
+		{"501 lines", strings.Repeat("x\n", 501), []string{"SKILL.md: body has 501 lines, more than 500"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFiles(t, root, map[string]string{"s/SKILL.md": front + tc.body})
+			got := validate(t, root, "s")
+			if !reflect.DeepEqual(got, tc.want) && (len(got) != 0 || len(tc.want) != 0) {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUnclosedFence(t *testing.T) {
+	const front = "---\nname: s\ndescription: d\n---\n"
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{
+			name:  "unclosed backticks",
+			files: map[string]string{"s/SKILL.md": front + "text\n```sh\necho\n"},
+			want:  []string{"SKILL.md:6: code fence is not closed"},
+		},
+		{
+			name:  "unclosed tildes",
+			files: map[string]string{"s/SKILL.md": front + "~~~\necho\n"},
+			want:  []string{"SKILL.md:5: code fence is not closed"},
+		},
+		{
+			name:  "tildes do not close backticks",
+			files: map[string]string{"s/SKILL.md": front + "```\n~~~\n"},
+			want:  []string{"SKILL.md:5: code fence is not closed"},
+		},
+		{
+			name:  "shorter fence does not close",
+			files: map[string]string{"s/SKILL.md": front + "````\n```\n"},
+			want:  []string{"SKILL.md:5: code fence is not closed"},
+		},
+		{
+			name:  "longer fence closes",
+			files: map[string]string{"s/SKILL.md": front + "```\nx\n````\n"},
+		},
+		{
+			name:  "closing fence with text does not close",
+			files: map[string]string{"s/SKILL.md": front + "```\n``` x\n"},
+			want:  []string{"SKILL.md:5: code fence is not closed"},
+		},
+		{
+			name:  "inline triple backticks are not a fence",
+			files: map[string]string{"s/SKILL.md": front + "```code``` in prose\n"},
+		},
+		{
+			name: "nested reference file",
+			files: map[string]string{
+				"s/SKILL.md":        front,
+				"s/references/a.md": "intro\n```\nopen\n",
+			},
+			want: []string{"references/a.md:2: code fence is not closed"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFiles(t, root, tc.files)
+			got := validate(t, root, "s")
+			if !reflect.DeepEqual(got, tc.want) && (len(got) != 0 || len(tc.want) != 0) {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFenceTracker(t *testing.T) {
+	var f fenceTracker
+	steps := []struct {
+		line string
+		skip bool
+	}{
+		{"prose", false},
+		{"  ```go", true},
+		{"[g](../x.md)", true},
+		{"```", true},
+		{"[g](../x.md)", false},
+	}
+	for i, s := range steps {
+		if got := f.next(s.line, i+1); got != s.skip {
+			t.Errorf("line %d %q: skip = %v, want %v", i+1, s.line, got, s.skip)
+		}
+	}
+	if _, ok := f.unclosed(); ok {
+		t.Error("fence must be closed")
+	}
+}
+
+func TestLineRefs(t *testing.T) {
+	got := lineRefs("[a](x.md) ![i](y.png) `../z.md` `cat ../w` `/var/log` `.apm/s/SKILL.md`")
+	want := []ref{{"x.md", true}, {"y.png", true}, {"../z.md", false}, {".apm/s/SKILL.md", false}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+	if got := lineRefs("[ref]: docs/b.md"); !reflect.DeepEqual(got, []ref{{"docs/b.md", true}}) {
+		t.Errorf("ref definition: got %v", got)
+	}
+}
+
+// A field whose YAML shape cannot be decoded into Meta makes the skill
+// unloadable, so it is reported as skipped rather than as a finding.
+func TestStructuralFieldMismatchSkipsSkill(t *testing.T) {
+	for _, fm := range []string{"license: [a, b]\n", "allowed-tools: [Bash]\n", "metadata: text\n"} {
+		root := t.TempDir()
+		writeFiles(t, root, map[string]string{"s/SKILL.md": "---\nname: s\ndescription: d\n" + fm + "---\n"})
+		if _, err := Load(root + "/s"); err == nil {
+			t.Errorf("Load accepted %q", fm)
+		}
+	}
+}
