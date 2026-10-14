@@ -8,14 +8,24 @@ import (
 	"strings"
 	"testing"
 
-	"skillcheck/internal/skills"
+	"github.com/Netcracker/platform-ci-toolkit/skill-validator/pkg/skills"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-func problems(ws ...string) skills.Findings { return skills.Findings{Warnings: ws} }
+func problems(ws ...string) skills.Findings { return skills.Findings{Problems: wrap(ws)} }
 
-func skipped(w string) skills.Findings { return skills.Findings{Warnings: []string{w}, Skipped: true} }
+func wrap(ws []string) []skills.Problem {
+	var out []skills.Problem
+	for _, w := range ws {
+		out = append(out, skills.Problem{Details: w})
+	}
+	return out
+}
+
+func skipped(w string) skills.Findings {
+	return skills.Findings{Problems: wrap([]string{w}), Skipped: true}
+}
 
 var (
 	allValid = Result{Entries: []Entry{{Name: "zeta"}, {Name: "alpha"}}}

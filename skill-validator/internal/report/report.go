@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"skillcheck/internal/skills"
+	"github.com/Netcracker/platform-ci-toolkit/skill-validator/pkg/skills"
 )
 
 // Status is the outcome of one skill. The order is the severity order.
@@ -33,7 +33,7 @@ func (e Entry) Status() Status {
 	switch {
 	case e.Findings.Skipped:
 		return Warn
-	case len(e.Findings.Warnings) > 0:
+	case len(e.Findings.Problems) > 0:
 		return Fail
 	}
 	return Pass
@@ -89,15 +89,15 @@ func Render(w io.Writer, r Result, color bool) error {
 	for _, e := range entries {
 		st := e.Status()
 		count[st]++
-		problems += len(e.Findings.Warnings)
+		problems += len(e.Findings.Problems)
 
 		b.WriteString(paint(colorOf[st], label[st]) + "  " + e.Name)
 		if names[e.Name] > 1 && e.Dir != "" {
 			b.WriteString(" (" + e.Dir + ")")
 		}
 		b.WriteString("\n")
-		for _, f := range e.Findings.Warnings {
-			b.WriteString("        " + oneLine(f) + "\n")
+		for _, p := range e.Findings.Problems {
+			b.WriteString("        " + oneLine(p.Details) + "\n")
 		}
 	}
 

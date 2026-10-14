@@ -350,3 +350,32 @@ func TestBinary(t *testing.T) {
 		t.Errorf("clean run failed: %v\n%s", err, out)
 	}
 }
+
+func TestMaxProblems(t *testing.T) {
+	root := t.TempDir()
+	var links strings.Builder
+	for i := range 6 {
+		links.WriteString("[l](../x" + string(rune('a'+i)) + ".md)\n")
+	}
+	writeFiles(t, root, map[string]string{"s/SKILL.md": md("s") + links.String()})
+	dir := filepath.Join(root, "s")
+
+	out, _, code := execute(t, dir)
+	if code != 1 || !strings.Contains(out, "6 problems") || strings.Contains(out, "more problems") {
+		t.Errorf("default must be unlimited: code=%d out=%s", code, out)
+	}
+	out, _, code = execute(t, "--max-problems", "3", dir)
+	if code != 1 || !strings.Contains(out, "... and 4 more problems\n") || !strings.Contains(out, "3 problems") {
+		t.Errorf("limit 3: code=%d out=%s", code, out)
+	}
+	out, _, _ = execute(t, "--max-problems=0", dir)
+	if !strings.Contains(out, "6 problems") {
+		t.Errorf("zero must be unlimited:\n%s", out)
+	}
+	for _, bad := range []string{"-1", "abc"} {
+		out, errOut, code := execute(t, "--max-problems", bad, dir)
+		if code != 2 || out != "" || !strings.HasPrefix(errOut, "Error: ") || !strings.Contains(errOut, "--max-problems") {
+			t.Errorf("%s: code=%d out=%q err=%q", bad, code, out, errOut)
+		}
+	}
+}

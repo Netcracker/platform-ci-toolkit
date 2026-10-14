@@ -1,4 +1,4 @@
-module skillcheck
+module github.com/Netcracker/platform-ci-toolkit/skill-validator
 
 go 1.27
 

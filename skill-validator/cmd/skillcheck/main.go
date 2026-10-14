@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"skillcheck/internal/report"
-	"skillcheck/internal/skills"
+	"github.com/Netcracker/platform-ci-toolkit/skill-validator/internal/report"
+	"github.com/Netcracker/platform-ci-toolkit/skill-validator/pkg/skills"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -41,6 +41,9 @@ ARGUMENTS
 FLAGS
   -h, --help      Print this help and exit.
   --version       Print the version and exit.
+  --max-problems N
+                  Report at most N problems per skill; the last line counts
+                  the ones left out. 0 means no limit, which is the default.
   --no-color      Do not color the report. Colors are also off when the
                   NO_COLOR environment variable is set to a non-empty value.
 
@@ -56,8 +59,7 @@ CHECKS
   code fences    Every fenced code block in a Markdown file must be closed.
   layout         Every file a skill references must live inside the skill
                  folder: Markdown links must resolve there, and references
-                 that point outside it are reported. At most 20 findings are
-                 reported per skill.
+                 that point outside it are reported.
   loading        The skill file must be named exactly SKILL.md; a name that
                  differs in case, such as skill.md, is reported. A SKILL.md
                  with unparsable frontmatter is reported as skipped.
@@ -96,6 +98,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(io.Discard)
 	showVersion := fs.Bool("version", false, "")
 	noColor := fs.Bool("no-color", false, "")
+	maxProblems := fs.Int("max-problems", 0, "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprint(stdout, usageText)
@@ -109,6 +112,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 
+	if *maxProblems < 0 {
+		fmt.Fprintf(stderr, "Error: --max-problems must not be negative\n\n%s", usageText)
+		return exitError
+	}
+	v := skills.NewValidator(skills.WithMaxProblems(*maxProblems))
+
 	folders := fs.Args()
 	if len(folders) == 0 {
 		folders = []string{"."}
@@ -121,7 +130,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var res report.Result
 	failed := false
 	for _, t := range targets {
-		if err := collect(t, &res); err != nil {
+		if err := collect(t, v, &res); err != nil {
 			fail(stderr, "%v", err)
 			failed = true
 		}
@@ -174,7 +183,7 @@ func resolve(folders []string, stderr io.Writer) ([]target, bool) {
 
 // collect validates the skill or bundle at t and adds the outcome to res. It
 // returns an error when t holds no skill.
-func collect(t target, res *report.Result) error {
+func collect(t target, v *skills.Validator, res *report.Result) error {
 	var (
 		loaded  []*skills.Skill
 		skipped map[string]string
@@ -203,7 +212,7 @@ func collect(t target, res *report.Result) error {
 		}
 	}
 
-	found, err := skills.ValidateAll(loaded)
+	found, err := v.ValidateAll(loaded)
 	if err != nil {
 		return err
 	}

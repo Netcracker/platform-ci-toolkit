@@ -28,6 +28,7 @@ The skill file must be named exactly `SKILL.md`. A file such as `skill.md` is re
 |------|---------|
 | `-h`, `--help` | Print usage, arguments, checks, output format and exit codes. |
 | `--version` | Print the version. |
+| `--max-problems N` | Report at most `N` problems per skill; the last line counts the ones left out. `0` means no limit and is the default. A negative value is a usage error. |
 | `--no-color` | Do not color the report. Same as setting the `NO_COLOR` environment variable to a non-empty value. |
 
 Examples:
@@ -153,7 +154,7 @@ Subdirectories of a bundle root without a skill file are not skills and are igno
   - Error: `<file>:<line>: "ref" does not exist in the skill folder`
   - Fix: create the file or correct the link path.
 
-At most 20 problems are reported per skill; when there are more, the last line tells how many were left out.
+All problems of a skill are reported by default. With `--max-problems N` at most `N` are listed per skill and the last line tells how many were left out.
 
 Not checked yet: the size of the `SKILL.md` body in tokens (only lines are counted). Semantic checks of skill content are out of scope.
 
@@ -167,6 +168,79 @@ The exit code makes `skillcheck` a merge gate. For example, in a GitHub Actions 
 ```
 
 Any job runner works the same way: the step fails when the exit code is not 0. Most CI log viewers render the colors; add `--no-color` if yours does not.
+
+## Install and use
+
+### As a binary
+
+**Local development: `go install`**
+
+Requires Go (version in `go.mod`). The executable lands in `$(go env GOPATH)/bin`; make sure that folder is on your `PATH`.
+
+```sh
+go install github.com/Netcracker/platform-ci-toolkit/skill-validator/cmd/skillcheck@latest
+skillcheck ./skills
+```
+
+`skill-validator` is a subdirectory module, so Go resolves versions from tags named `skill-validator/vX.Y.Z`. Without such a tag `@latest` resolves to a pseudo-version of the default branch; use `@main` to track it explicitly.
+
+**CI: Docker image**
+
+The image has no Go toolchain, only the static executable. The entrypoint is `skillcheck` and the working directory is `/work`, so mount the repository there and pass folders as arguments:
+
+```sh
+docker run --rm -v "$PWD:/work" ghcr.io/netcracker/skillcheck:latest ./skills
+```
+
+**Clone and build**
+
+Requires Go and `make`.
+
+```sh
+git clone https://github.com/Netcracker/platform-ci-toolkit.git
+cd platform-ci-toolkit/skill-validator
+make build            # -> dist/skillcheck
+./dist/skillcheck ./skills
+```
+
+See [Build](#build) for all make targets.
+
+### As a Go library
+
+The checks are available as the package `pkg/skills`, the same code the command uses. Reports are not part of the library: you get the problems as plain strings, identical to the command's messages, and decide how to present them.
+
+```sh
+go get github.com/Netcracker/platform-ci-toolkit/skill-validator@latest
+```
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/Netcracker/platform-ci-toolkit/skill-validator/pkg/skills"
+)
+
+func main() {
+	s, err := skills.Load("./skills/code-review")
+	if err != nil {
+		log.Fatal(err) // not loadable: bad frontmatter or wrongly cased skill file
+	}
+	problems, err := skills.NewValidator().Validate(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, p := range problems {
+		fmt.Printf("%s: [%s] %s\n", s.Name(), p.Severity, p.Details)
+	}
+}
+```
+
+`Validate` returns `[]skills.Problem`. A `Problem` has a `Severity` (`SeverityError` or `SeverityWarning`) and `Details`, the message text. Today every problem is an error and the command fails on any problem. Build `Problem` values with keyed literals: fields may be added later.
+
+To check every skill in a bundle folder, use `skills.LoadAll(root)` (returns loaded skills and the skipped ones with reasons), then `v.ValidateAll(loaded)` and `skills.WarningLines(...)`, where `v` is the validator from `skills.NewValidator()`. Pass options to configure it: `skills.NewValidator(skills.WithMaxProblems(20))` keeps at most 20 problems per skill (the default is no limit).
 
 ## Build
 

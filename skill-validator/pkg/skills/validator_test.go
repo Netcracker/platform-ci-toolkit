@@ -8,17 +8,24 @@ import (
 )
 
 // validate loads the skill in dir/<name> and returns its findings.
-func validate(t *testing.T, root, name string) []string {
+func validate(t *testing.T, root, name string, opts ...Option) []string {
 	t.Helper()
 	s, err := Load(root + "/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	warns, err := Validate(s)
+	problems, err := NewValidator(opts...).Validate(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return warns
+	var out []string
+	for _, p := range problems {
+		if p.Severity != SeverityError {
+			t.Errorf("problem %q has severity %v, want error", p.Details, p.Severity)
+		}
+		out = append(out, p.Details)
+	}
+	return out
 }
 
 func TestFrontmatterChecks(t *testing.T) {
@@ -173,7 +180,17 @@ func TestLimit(t *testing.T) {
 	}
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{"s/SKILL.md": b.String()})
-	got := validate(t, root, "s")
+	if got := validate(t, root, "s"); len(got) != 25 {
+		t.Errorf("default must be unlimited, got %d findings, want 25", len(got))
+	}
+	if got := validate(t, root, "s", WithMaxProblems(-3)); len(got) != 25 {
+		t.Errorf("negative must be unlimited, got %d findings, want 25", len(got))
+	}
+	if got := validate(t, root, "s", WithMaxProblems(25)); len(got) != 25 || strings.Contains(got[24], "more problems") {
+		t.Errorf("exactly the limit must pass through, got %d", len(got))
+	}
+
+	got := validate(t, root, "s", WithMaxProblems(20))
 	if len(got) != 20 {
 		t.Fatalf("got %d findings, want 20", len(got))
 	}
@@ -183,9 +200,32 @@ func TestLimit(t *testing.T) {
 	if got[19] != "... and 6 more problems" {
 		t.Errorf("tail = %q", got[19])
 	}
+	if got := validate(t, root, "s", WithMaxProblems(1)); !reflect.DeepEqual(got, []string{"... and 25 more problems"}) {
+		t.Errorf("limit 1 = %q", got)
+	}
+}
 
-	if got := limit(make([]string, 20)); len(got) != 20 || strings.Contains(got[19], "more problems") {
-		t.Errorf("exactly 20 must pass through, got %d", len(got))
+func TestLimitFunc(t *testing.T) {
+	if got := limit(make([]Problem, 20), 20); len(got) != 20 || strings.Contains(got[19].Details, "more problems") {
+		t.Errorf("exactly n must pass through, got %d", len(got))
+	}
+	if got := limit(make([]Problem, 21), 20); got[19].Severity != SeverityError {
+		t.Errorf("tail severity = %v, want error", got[19].Severity)
+	}
+	if got := limit(make([]Problem, 50), 0); len(got) != 50 {
+		t.Errorf("zero must not limit, got %d", len(got))
+	}
+}
+
+func TestSeverity(t *testing.T) {
+	if (Problem{}).Severity != SeverityError {
+		t.Error("zero severity must be error")
+	}
+	if SeverityError.String() != "error" || SeverityWarning.String() != "warning" || Severity(9).String() != "severity(9)" {
+		t.Error("unexpected Severity.String")
+	}
+	if got := (Problem{Details: "x"}).String(); got != "x" {
+		t.Errorf("Problem.String = %q", got)
 	}
 }
 
@@ -200,7 +240,7 @@ func TestValidateAllAndWarningLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found, err := ValidateAll(loaded)
+	found, err := NewValidator().ValidateAll(loaded)
 	if err != nil {
 		t.Fatal(err)
 	}

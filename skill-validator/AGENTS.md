@@ -14,12 +14,12 @@ make build-all VERSION=1.2.3           # cross-compiled static binaries -> dist/
 go test ./internal/report -update      # rewrite golden files after an intended report change
 ```
 
-`dist/` is git-ignored. The Go version is pinned in `go.mod` (module name `skillcheck`). Dependencies: stdlib plus `github.com/adrg/frontmatter`; avoid adding more.
+`dist/` is git-ignored. The Go version is pinned in `go.mod` (module path `github.com/Netcracker/platform-ci-toolkit/skill-validator`). Dependencies: stdlib plus `github.com/adrg/frontmatter`; avoid adding more.
 
 ## Layout
 
 - `cmd/skillcheck/main.go`: flags, folder handling, exit codes, help text. `run(args, stdout, stderr) int` is the testable entry point; `main` only calls it.
-- `internal/skills`: loading (`Load`, `LoadAll`, `FindSkillFile`) and validation (`Validate`, `ValidateAll`). Ported from an internal library; checks and message wording are meant to stay identical.
+- `pkg/skills`: public library API (importable by Go users; exported names are a compatibility surface: configure `Validator` through `Option`s passed to `NewValidator`, never new constructor parameters; add `Problem` fields, never reorder or remove, callers use keyed literals). Loading (`Load`, `LoadAll`, `FindSkillFile`) and validation (`Validate`, `ValidateAll`). Ported from an internal library; checks and message wording are meant to stay identical.
 - `internal/report`: text rendering with ANSI colors. Golden files live in `internal/report/testdata/`.
 
 ## Rules that are not obvious from the code
