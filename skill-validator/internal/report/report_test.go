@@ -44,6 +44,20 @@ var (
 		{Name: "solo", Dir: "/work/one"},
 	}}
 
+	warnOnly = Result{Entries: []Entry{
+		{Name: "ok"},
+		{Name: "portable", Findings: skills.Findings{Problems: []skills.Problem{
+			{Severity: skills.SeverityWarning, Details: `SKILL.md: harness-specific frontmatter field "model" (Claude Code only, not in the Agent Skills specification)`},
+		}}},
+	}}
+
+	warnAndError = Result{Entries: []Entry{
+		{Name: "both", Findings: skills.Findings{Problems: []skills.Problem{
+			{Severity: skills.SeverityError, Details: "SKILL.md: name is missing"},
+			{Severity: skills.SeverityWarning, Details: `SKILL.md: harness-specific frontmatter field "paths" (Claude Code only, not in the Agent Skills specification)`},
+		}}},
+	}}
+
 	multiline = Result{Entries: []Entry{
 		{Name: "md", Findings: problems("a | b `code` [link](x) *bold*\nsecond\tline   spaced")},
 	}}
@@ -61,6 +75,9 @@ func TestRenderGolden(t *testing.T) {
 		{"only_skipped", onlySkipped, false},
 		{"same_name", sameName, false},
 		{"multiline", multiline, false},
+		{"warnings_only", warnOnly, false},
+		{"warnings_only_color", warnOnly, true},
+		{"warnings_and_errors", warnAndError, false},
 		{"mixed_color", mixed, true},
 		{"all_valid_color", allValid, true},
 		{"only_skipped_color", onlySkipped, true},
@@ -143,6 +160,28 @@ func TestStatusAndFailed(t *testing.T) {
 	}
 	if allValid.Failed() || !mixed.Failed() || !onlySkipped.Failed() || (Result{}).Failed() {
 		t.Error("wrong Failed()")
+	}
+	if warnOnly.Failed() || warnOnly.Entries[1].Status() != Pass {
+		t.Error("warnings alone must not fail")
+	}
+	if !warnAndError.Failed() || warnAndError.Entries[0].Status() != Fail {
+		t.Error("an error next to a warning must fail")
+	}
+}
+
+func TestWarningColors(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, warnOnly, true); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		yellow + "        SKILL.md: harness-specific",
+		bold + yellow + "Summary:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%q", want, out)
+		}
 	}
 }
 

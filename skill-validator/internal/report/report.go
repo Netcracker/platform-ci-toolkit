@@ -33,11 +33,13 @@ func (e Entry) Status() Status {
 	switch {
 	case e.Findings.Skipped:
 		return Warn
-	case len(e.Findings.Problems) > 0:
+	case slices.ContainsFunc(e.Findings.Problems, isError):
 		return Fail
 	}
 	return Pass
 }
+
+func isError(p skills.Problem) bool { return p.Severity == skills.SeverityError }
 
 // Result is everything one run checked: every skill, valid or not.
 type Result struct {
@@ -85,7 +87,7 @@ func Render(w io.Writer, r Result, color bool) error {
 
 	var b strings.Builder
 	var count [3]int
-	problems := 0
+	problems, warnings := 0, 0
 	for _, e := range entries {
 		st := e.Status()
 		count[st]++
@@ -97,7 +99,12 @@ func Render(w io.Writer, r Result, color bool) error {
 		}
 		b.WriteString("\n")
 		for _, p := range e.Findings.Problems {
-			b.WriteString("        " + oneLine(p.Details) + "\n")
+			line := "        " + oneLine(p.Details)
+			if p.Severity == skills.SeverityWarning {
+				warnings++
+				line = paint(yellow, line)
+			}
+			b.WriteString(line + "\n")
 		}
 	}
 
@@ -109,6 +116,12 @@ func Render(w io.Writer, r Result, color bool) error {
 	}
 	summary := fmt.Sprintf("Summary: %s checked, %d valid, %d failed, %d skipped, %s",
 		plural(len(entries), "skill"), count[Pass], count[Fail], count[Warn], plural(problems, "problem"))
+	if warnings > 0 {
+		summary += fmt.Sprintf(", %s", plural(warnings, "warning"))
+		if worst == Pass {
+			worst = Warn // Colors the summary yellow
+		}
+	}
 	if len(entries) > 0 {
 		b.WriteString("\n")
 	}

@@ -279,13 +279,43 @@ func TestColors(t *testing.T) {
 	})
 }
 
+func TestHarnessFieldWarnings(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"claude/SKILL.md": "---\nname: claude\ndescription: d\nargument-hint: '[x]'\n---\n",
+		"typo/SKILL.md":   "---\nname: typo\ndescription: d\nargument-hnt: x\n---\n",
+	})
+	claude, typo := filepath.Join(root, "claude"), filepath.Join(root, "typo")
+
+	out, _, code := execute(t, claude)
+	if code != 0 || !strings.HasPrefix(out, "PASS  claude\n") ||
+		!strings.Contains(out, `harness-specific frontmatter field "argument-hint"`) ||
+		!strings.Contains(out, "1 problem, 1 warning\n") {
+		t.Errorf("warnings must not fail: code=%d out=%s", code, out)
+	}
+	out, _, code = executeEnv(t, "", claude)
+	if code != 0 || !strings.Contains(out, "\x1b[33m        SKILL.md: harness-specific") {
+		t.Errorf("warning must be yellow: code=%d out=%q", code, out)
+	}
+
+	out, _, code = execute(t, "--strict", claude)
+	if code != 1 || !strings.HasPrefix(out, "FAIL  claude\n") || strings.Contains(out, "warning\n") {
+		t.Errorf("--strict must fail: code=%d out=%s", code, out)
+	}
+
+	out, _, code = execute(t, typo)
+	if code != 1 || !strings.Contains(out, `unknown frontmatter field "argument-hnt"`) {
+		t.Errorf("unknown field must fail: code=%d out=%s", code, out)
+	}
+}
+
 func TestHelp(t *testing.T) {
 	for _, flag := range []string{"--help", "-h"} {
 		out, errOut, code := execute(t, flag)
 		if code != 0 || errOut != "" {
 			t.Errorf("%s: code=%d err=%q", flag, code, errOut)
 		}
-		for _, want := range []string{"USAGE", "ARGUMENTS", "OUTPUT", "EXIT CODES", "CHECKS", "PASS", "FAIL", "WARN", "NO_COLOR", "--no-color", "  0 ", "  1 ", "  2 "} {
+		for _, want := range []string{"USAGE", "ARGUMENTS", "OUTPUT", "EXIT CODES", "CHECKS", "PASS", "FAIL", "WARN", "NO_COLOR", "--no-color", "--strict", "  0 ", "  1 ", "  2 "} {
 			if !strings.Contains(out, want) {
 				t.Errorf("%s: help lacks %q", flag, want)
 			}
