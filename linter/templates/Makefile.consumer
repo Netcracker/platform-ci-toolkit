@@ -1,0 +1,106 @@
+# Consumer Makefile template for platform-ci-toolkit / Super-Linter.
+# Copy this file into a consumer repository as Makefile (or include it)
+# and adjust the variables below if needed.
+#
+# This Makefile works in two modes:
+#   - Local: it pulls the linter image and runs it via Docker.
+#   - CI:    it runs /usr/local/bin/run.sh directly because the job already
+#            executes inside the linter container.
+
+LINTER_IMAGE ?= ghcr.io/netcracker/linter
+LINTER_TAG ?= latest
+LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
+
+REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+# Optional: synchronize this Makefile from the upstream template.
+# Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer.
+sync-linter-makefile:
+ifdef PLATFORM_CI_TOOLKIT_RAW_URL
+	curl -fsSL -o $(REPO_ROOT)/Makefile.linter $(PLATFORM_CI_TOOLKIT_RAW_URL)
+else
+	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer"
+	@exit 1
+endif
+
+LINTER_ENV ?= \
+	-e RUN_LOCAL=true \
+	-e DEFAULT_BRANCH=master \
+	-e VALIDATE_ALL_CODEBASE=false \
+	-e FILTER_REGEX_INCLUDE \
+	-e FILTER_REGEX_EXCLUDE
+
+LINTER_VOLUMES ?= \
+	-v "$(REPO_ROOT):/tmp/lint"
+
+LINTER_RUN ?= docker run --rm \
+	$(LINTER_ENV) \
+	$(LINTER_VOLUMES) \
+	$(LINTER_IMAGE_FULL)
+
+ifeq ($(CI),true)
+
+# CI mode: we are already running inside the linter container.
+.PHONY: lint super-linter lint_go_modules lint-fix lint-module
+
+lint:
+	@super_status=0; go_status=0; \
+	/usr/local/bin/run.sh super-linter || super_status=$$?; \
+	/usr/local/bin/run.sh go || go_status=$$?; \
+	if [ "$$super_status" -ne 0 ] || [ "$$go_status" -ne 0 ]; then exit 1; fi
+
+super-linter:
+	/usr/local/bin/run.sh super-linter
+
+lint_go_modules:
+	/usr/local/bin/run.sh go
+
+lint-fix:
+	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
+
+lint-module:
+ifdef MODULE
+	FILTER_REGEX_INCLUDE="services/$(MODULE)/.*" /usr/local/bin/run.sh go
+else
+	@echo "Set MODULE to the service directory name, for example: make lint-module MODULE=backuper-service"
+	@exit 1
+endif
+
+else
+
+# Local mode: run the linter container via Docker.
+.PHONY: ensure-linter-image lint super-linter lint_go_modules lint-fix lint-module
+
+ensure-linter-image:
+	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
+		echo "Pulling $(LINTER_IMAGE_FULL)..."; \
+		docker pull $(LINTER_IMAGE_FULL); \
+	fi
+
+lint: ensure-linter-image
+	$(LINTER_RUN)
+
+super-linter: ensure-linter-image
+	$(LINTER_RUN) super-linter
+
+lint_go_modules: ensure-linter-image
+	$(LINTER_RUN) go
+
+lint-fix: ensure-linter-image
+	docker run --rm \
+		-e FIX_GO=true \
+		-e FIX_MARKDOWN=true \
+		-e FIX_YAML_PRETTIER=true \
+		$(LINTER_ENV) \
+		$(LINTER_VOLUMES) \
+		$(LINTER_IMAGE_FULL) super-linter
+
+lint-module: ensure-linter-image
+ifdef MODULE
+	FILTER_REGEX_INCLUDE="services/$(MODULE)/.*" $(LINTER_RUN) go
+else
+	@echo "Set MODULE to the service directory name, for example: make lint-module MODULE=backuper-service"
+	@exit 1
+endif
+
+endif
