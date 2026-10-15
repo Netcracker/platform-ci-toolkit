@@ -149,7 +149,7 @@ Subdirectories of a bundle root without a skill file are not skills and are igno
 
 - [ ] Links, images, link definitions and code spans stay inside the skill folder
   - Error: `<file>:<line>: "ref" points outside the skill folder; only .apm/skills/<name>/ is installed`
-  - Fix: copy the file into the skill folder and link it with a relative path, or remove the reference. Targets starting with `../` or `/`, or containing `.apm/`, are reported; fenced code blocks and links with a scheme (`https:`, `mailto:`) are ignored.
+  - Fix: copy the file into the skill folder and link it with a relative path, or remove the reference. Targets starting with `../` or `/`, or containing `.apm/`, are reported; fenced code blocks, links written inside inline code spans (samples and templates) and links with a scheme (`https:`, `mailto:`) are ignored.
 - [ ] Linked files exist
   - Error: `<file>:<line>: "ref" does not exist in the skill folder`
   - Fix: create the file or correct the link path.

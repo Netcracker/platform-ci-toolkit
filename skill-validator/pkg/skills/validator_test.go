@@ -106,6 +106,18 @@ func TestReferenceChecks(t *testing.T) {
 			files: map[string]string{"s/SKILL.md": front + "[g](a.md#sec) [h](a.md?x=1)\n", "s/a.md": "x"},
 		},
 		{
+			name: "links inside code spans are samples",
+			files: map[string]string{"s/SKILL.md": front +
+				"- Use links: `[Feature Name](/docs/public/feature-name.md)`.\n" +
+				"- Images: `![Alt Text](/docs/public/images/a.png)`\n" +
+				"- Appears as: `[Full CR analysis\\|<url>]`\n"},
+		},
+		{
+			name:  "real link next to code span still checked",
+			files: map[string]string{"s/SKILL.md": front + "`[a](/x.md)` and [g](references/missing.md)\n"},
+			want:  []string{`SKILL.md:5: "references/missing.md" does not exist in the skill folder`},
+		},
+		{
 			name:  "anchor only",
 			files: map[string]string{"s/SKILL.md": front + "[g](#sec)\n"},
 		},
@@ -406,6 +418,9 @@ func TestLineRefs(t *testing.T) {
 	want := []ref{{"x.md", true}, {"y.png", true}, {"../z.md", false}, {".apm/s/SKILL.md", false}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v\nwant %v", got, want)
+	}
+	if got := lineRefs("`[a](/x.md)` `![i](/y.png)` [`c`](z.md)"); !reflect.DeepEqual(got, []ref{{"z.md", true}}) {
+		t.Errorf("links in code spans: got %v", got)
 	}
 	if got := lineRefs("[ref]: docs/b.md"); !reflect.DeepEqual(got, []ref{{"docs/b.md", true}}) {
 		t.Errorf("ref definition: got %v", got)

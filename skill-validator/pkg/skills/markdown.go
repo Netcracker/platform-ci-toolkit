@@ -104,15 +104,25 @@ type ref struct {
 // lineRefs returns the references in one line outside a fenced block.
 func lineRefs(line string) []ref {
 	var out []ref
-	for _, m := range inlineLinkRe.FindAllStringSubmatch(line, -1) {
+	// A link inside a code span is a sample, not a reference: blank the spans
+	// (keeping offsets and link text brackets intact) before looking for links.
+	masked := []byte(line)
+	spans := codeSpanRe.FindAllStringSubmatchIndex(line, -1)
+	for _, sp := range spans {
+		for i := sp[0]; i < sp[1]; i++ {
+			masked[i] = ' '
+		}
+	}
+	text := string(masked)
+	for _, m := range inlineLinkRe.FindAllStringSubmatch(text, -1) {
 		out = append(out, ref{m[1], true})
 	}
-	if m := refDefRe.FindStringSubmatch(line); m != nil {
+	if m := refDefRe.FindStringSubmatch(text); m != nil {
 		out = append(out, ref{m[1], true})
 	}
-	for _, m := range codeSpanRe.FindAllStringSubmatch(line, -1) {
-		if isRepoFileSpan(m[1]) {
-			out = append(out, ref{m[1], false})
+	for _, sp := range spans {
+		if tok := line[sp[2]:sp[3]]; isRepoFileSpan(tok) {
+			out = append(out, ref{tok, false})
 		}
 	}
 	return out
