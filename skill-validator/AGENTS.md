@@ -24,7 +24,8 @@ go test ./internal/report -update      # rewrite golden files after an intended 
 
 ## Rules that are not obvious from the code
 
-- **Exit codes:** 0 all skills pass, 1 any skill failed or was skipped, 2 usage or operational error (missing folder, folder without skills, bad flag). Changing them means updating the help text and README too.
+- **Warnings:** keys in `harnessFields` (Claude Code extensions) are `SeverityWarning`; they print yellow, leave the skill `PASS` and the exit code 0. Other unknown keys stay errors. `--strict` / `WithStrict()` turns every warning into an error. Only add to `harnessFields` keys that a named harness documents.
+- **Exit codes:** 0 all skills pass (warnings do not count), 1 any skill failed or was skipped, 2 usage or operational error (missing folder, folder without skills, bad flag). Changing them means updating the help text and README too.
 - **The skill file is matched by exact case.** Always find it through `skills.FindSkillFile` (directory listing); `os.Stat("SKILL.md")` also matches `skill.md` on Windows and macOS.
 - **Folder semantics:** a folder with `SKILL.md` is one skill; otherwise it is a bundle root and only subdirectories with a skill file count. With no arguments the current directory is used, exactly as if `.` was passed.
 - **Finding messages are a compatibility surface:** CI users read them. Change wording only deliberately, with tests.

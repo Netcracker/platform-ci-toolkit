@@ -44,6 +44,8 @@ FLAGS
   --max-problems N
                   Report at most N problems per skill; the last line counts
                   the ones left out. 0 means no limit, which is the default.
+  --strict        Treat warnings as failures. Use it for skills that must stay
+                  portable, for example those uploaded to claude.ai.
   --no-color      Do not color the report. Colors are also off when the
                   NO_COLOR environment variable is set to a non-empty value.
 
@@ -54,7 +56,9 @@ CHECKS
   description    Required; not blank; at most 1024 characters.
   optional       license, compatibility and allowed-tools must be strings;
   fields         compatibility has at most 500 characters; metadata must map
-                 strings to strings; other frontmatter keys are reported.
+                 strings to strings. Frontmatter keys that Claude Code defines
+                 (argument-hint, arguments, model, ...) are warnings, as other
+                 harnesses ignore them; any other key is an error.
   body size      The SKILL.md body has at most 500 lines.
   code fences    Every fenced code block in a Markdown file must be closed.
   layout         Every file a skill references must live inside the skill
@@ -66,17 +70,18 @@ CHECKS
 
 OUTPUT
   A plain-text report on standard output. Every validated skill gets a line:
-    PASS  <skill>   no check failed
+    PASS  <skill>   no check failed; warnings, if any, follow in yellow
     FAIL  <skill>   at least one check failed; the problems follow, one per line
     WARN  <skill>   the skill could not be loaded and was skipped; the reason
                     follows
   The last line is a summary: skills checked, valid, failed, skipped, and the
-  number of problems. PASS is green, FAIL red and WARN yellow, also when the
-  output is not a terminal (see --no-color). Errors and usage problems go to
+  number of problems, and the number of warnings when there are any. PASS is
+  green, FAIL red and WARN yellow, also when the output is not a terminal (see
+  --no-color). Errors and usage problems go to
   standard error.
 
 EXIT CODES
-  0   Every skill passed.
+  0   Every skill passed. Warnings do not count, unless --strict is set.
   1   At least one skill failed or was skipped.
   2   Invalid usage or an operational error (for example, a folder that does
       not exist or holds no skills).
@@ -99,6 +104,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	showVersion := fs.Bool("version", false, "")
 	noColor := fs.Bool("no-color", false, "")
 	maxProblems := fs.Int("max-problems", 0, "")
+	strict := fs.Bool("strict", false, "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprint(stdout, usageText)
@@ -116,7 +122,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "Error: --max-problems must not be negative\n\n%s", usageText)
 		return exitError
 	}
-	v := skills.NewValidator(skills.WithMaxProblems(*maxProblems))
+	opts := []skills.Option{skills.WithMaxProblems(*maxProblems)}
+	if *strict {
+		opts = append(opts, skills.WithStrict())
+	}
+	v := skills.NewValidator(opts...)
 
 	folders := fs.Args()
 	if len(folders) == 0 {

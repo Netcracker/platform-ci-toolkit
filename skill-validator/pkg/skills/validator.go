@@ -78,7 +78,8 @@ func WithSkipped(found map[string]Findings, skipped map[string]string) map[strin
 // Validator checks skills against the Agent Skills specification. Create one
 // with NewValidator; it is safe for concurrent use.
 type Validator struct {
-	maxProblems int // Per skill; 0 means unlimited
+	maxProblems int  // Per skill; 0 means unlimited
+	strict      bool // Report warnings as errors
 }
 
 // Option configures a Validator.
@@ -89,6 +90,13 @@ type Option func(*Validator)
 // A value of zero or less means unlimited, which is the default.
 func WithMaxProblems(n int) Option {
 	return func(v *Validator) { v.maxProblems = max(n, 0) }
+}
+
+// WithStrict reports every warning as an error, so that a skill with
+// harness-specific frontmatter fields no longer passes. Use it for skills that
+// must stay portable, such as those uploaded to claude.ai.
+func WithStrict() Option {
+	return func(v *Validator) { v.strict = true }
 }
 
 // NewValidator returns a Validator with the given options applied.
@@ -127,7 +135,13 @@ func limit(problems []Problem, n int) []Problem {
 	for i, p := range problems {
 		if i == n-1 && len(problems) > n {
 			more := fmt.Sprintf("... and %d more problems", len(problems)-i)
-			out = append(out, Problem{Severity: SeverityError, Details: more})
+			// The worst severity among the dropped problems, so that dropped
+			// warnings alone never fail a skill.
+			sev := SeverityWarning
+			for _, d := range problems[i:] {
+				sev = min(sev, d.Severity)
+			}
+			out = append(out, Problem{Severity: sev, Details: more})
 			break
 		}
 		out = append(out, p)
@@ -156,6 +170,12 @@ func (v *Validator) Validate(s *Skill) ([]Problem, error) {
 		return nil, err
 	}
 	out := checkFrontmatter(s)
-	out = append(out, checkBodySize(s)...)
-	return limit(errorProblems(append(out, refs...)), v.maxProblems), nil
+	out = append(out, errorProblems(checkBodySize(s))...)
+	out = append(out, errorProblems(refs)...)
+	if v.strict {
+		for i := range out {
+			out[i].Severity = SeverityError
+		}
+	}
+	return limit(out, v.maxProblems), nil
 }

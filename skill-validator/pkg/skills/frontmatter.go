@@ -24,6 +24,28 @@ var knownFields = map[string]bool{
 	"allowed-tools": true,
 }
 
+// harnessFields are frontmatter keys that an agent harness defines on top of
+// the specification, mapped to the harness. Harnesses that do not know them
+// ignore them, and claude.ai and the Skills API reject them.
+var harnessFields = map[string]string{
+	"when_to_use":              claudeCode,
+	"argument-hint":            claudeCode,
+	"arguments":                claudeCode,
+	"disable-model-invocation": claudeCode,
+	"user-invocable":           claudeCode,
+	"disallowed-tools":         claudeCode,
+	"model":                    claudeCode,
+	"effort":                   claudeCode,
+	"context":                  claudeCode,
+	"agent":                    claudeCode,
+	"background":               claudeCode,
+	"hooks":                    claudeCode,
+	"paths":                    claudeCode,
+	"shell":                    claudeCode,
+}
+
+const claudeCode = "Claude Code"
+
 // nameRule returns the problem a skill name has, as the text that follows
 // `name "<name>"`, or "" when the name satisfies the rule. dir is the name of
 // the skill directory.
@@ -66,9 +88,9 @@ func notNameRune(r rune) bool {
 	return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-')
 }
 
-func checkFrontmatter(s *Skill) []string {
-	out := checkName(s.Meta.Name, s.Name())
-	out = append(out, checkDescription(s.Meta.Description)...)
+func checkFrontmatter(s *Skill) []Problem {
+	out := errorProblems(checkName(s.Meta.Name, s.Name()))
+	out = append(out, errorProblems(checkDescription(s.Meta.Description))...)
 	return append(out, checkOptionalFields(s.Fields)...)
 }
 
@@ -97,8 +119,9 @@ func checkDescription(desc string) []string {
 }
 
 // checkOptionalFields checks the types and limits of the optional fields in
-// the raw frontmatter and reports the keys the specification does not define.
-func checkOptionalFields(fields map[string]any) []string {
+// the raw frontmatter and reports the keys the specification does not define:
+// harness-specific keys as warnings, any other key as an error.
+func checkOptionalFields(fields map[string]any) []Problem {
 	var problems []string
 	for _, p := range []string{
 		checkStringField(fields, "license", 0),
@@ -110,11 +133,16 @@ func checkOptionalFields(fields map[string]any) []string {
 		}
 	}
 	problems = append(problems, checkMetadata(fields["metadata"])...)
-	problems = append(problems, checkUnknownFields(fields)...)
+	unknown, harness := checkUnknownFields(fields)
+	problems = append(problems, unknown...)
 
-	out := make([]string, len(problems))
-	for i, p := range problems {
-		out[i] = "SKILL.md: " + p
+	out := make([]Problem, 0, len(problems)+len(harness))
+	for _, p := range errorProblems(problems) {
+		p.Details = "SKILL.md: " + p.Details
+		out = append(out, p)
+	}
+	for _, text := range harness {
+		out = append(out, Problem{Severity: SeverityWarning, Details: "SKILL.md: " + text})
 	}
 	return out
 }
@@ -161,15 +189,23 @@ func checkMetadata(v any) []string {
 	return out
 }
 
-func checkUnknownFields(fields map[string]any) []string {
-	var out []string
+// checkUnknownFields returns the texts about the keys outside the
+// specification, sorted: unknown keys, and keys that a harness defines.
+func checkUnknownFields(fields map[string]any) (unknown, harness []string) {
 	for key := range fields {
-		if !knownFields[key] {
-			out = append(out, fmt.Sprintf("unknown frontmatter field %q", key))
+		if knownFields[key] {
+			continue
 		}
+		if h, ok := harnessFields[key]; ok {
+			harness = append(harness, fmt.Sprintf(
+				"harness-specific frontmatter field %q (%s only, not in the Agent Skills specification)", key, h))
+			continue
+		}
+		unknown = append(unknown, fmt.Sprintf("unknown frontmatter field %q", key))
 	}
-	slices.Sort(out)
-	return out
+	slices.Sort(unknown)
+	slices.Sort(harness)
+	return unknown, harness
 }
 
 // checkBodySize reports a SKILL.md body longer than maxBodyLines, so that the

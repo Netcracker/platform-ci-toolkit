@@ -29,6 +29,7 @@ The skill file must be named exactly `SKILL.md`. A file such as `skill.md` is re
 | `-h`, `--help` | Print usage, arguments, checks, output format and exit codes. |
 | `--version` | Print the version. |
 | `--max-problems N` | Report at most `N` problems per skill; the last line counts the ones left out. `0` means no limit and is the default. A negative value is a usage error. |
+| `--strict` | Treat warnings as failures: a skill with only warnings then gets `FAIL` and the exit code is 1. Use it for skills that must stay portable, for example those uploaded to claude.ai. |
 | `--no-color` | Do not color the report. Same as setting the `NO_COLOR` environment variable to a non-empty value. |
 
 Examples:
@@ -46,11 +47,11 @@ The report goes to standard output. Every validated skill gets one line, sorted 
 
 | Label | Meaning |
 |-------|---------|
-| `PASS` (green) | No check failed. |
+| `PASS` (green) | No check failed. Warnings, if any, are listed below in yellow; they do not fail the run unless `--strict` is set. |
 | `FAIL` (red) | At least one check failed. Each problem is listed below, one per line. |
 | `WARN` (yellow) | The skill could not be loaded and was skipped (unparsable frontmatter, or a wrongly cased skill file). The reason is listed below. |
 
-The last line is the summary: skills checked, valid, failed, skipped, and the number of problems. When two listed skills share a name, the folder is shown after the name.
+The last line is the summary: skills checked, valid, failed, skipped, and the number of problems, plus the number of warnings when there are any. When two listed skills share a name, the folder is shown after the name.
 
 ```
 FAIL  Bad_Skill
@@ -58,10 +59,12 @@ FAIL  Bad_Skill
         SKILL.md: description is missing or empty
         SKILL.md:4: "../shared.md" points outside the skill folder; only .apm/skills/Bad_Skill/ is installed
 PASS  code-review
+PASS  deploy
+        SKILL.md: harness-specific frontmatter field "disable-model-invocation" (Claude Code only, not in the Agent Skills specification)
 WARN  torn
         parse frontmatter SKILL.md: yaml: line 1: did not find expected ',' or ']'
 
-Summary: 3 skills checked, 1 valid, 1 failed, 1 skipped, 3 problems
+Summary: 4 skills checked, 2 valid, 1 failed, 1 skipped, 5 problems, 1 warning
 ```
 
 Colors are always on, also when the output is piped, so that CI logs show them. Set `NO_COLOR=1` or pass `--no-color` to get plain text. Errors and usage problems go to standard error.
@@ -70,7 +73,7 @@ Colors are always on, also when the output is piped, so that CI logs show them. 
 
 | Code | Meaning |
 |------|---------|
-| 0 | Every skill passed. |
+| 0 | Every skill passed. Warnings do not count, unless `--strict` is set. |
 | 1 | At least one skill failed or was skipped. |
 | 2 | Invalid usage or an operational error, for example a folder that does not exist or holds no skills. |
 
@@ -135,6 +138,11 @@ Subdirectories of a bundle root without a skill file are not skills and are igno
 - [ ] The frontmatter has no unknown keys (allowed: `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`)
   - Error: `SKILL.md: unknown frontmatter field "x"`
   - Fix: remove the key, fix a typo in a known key, or move the data under `metadata:`.
+- [ ] The frontmatter has no harness-specific keys
+  - Warning: `SKILL.md: harness-specific frontmatter field "argument-hint" (Claude Code only, not in the Agent Skills specification)`
+  - Keys: the extensions of [Claude Code](https://code.claude.com/docs/en/skills.md): `when_to_use`, `argument-hint`, `arguments`, `disable-model-invocation`, `user-invocable`, `disallowed-tools`, `model`, `effort`, `context`, `agent`, `background`, `hooks`, `paths`, `shell`.
+  - Why a warning: Claude Code uses them, other harnesses ignore them, and claude.ai and the Skills API reject them. The run still passes; with `--strict` the warning is an error.
+  - Fix: keep the key if you target Claude Code only. Otherwise remove it. opencode takes its own extensions under `metadata:` (for example `opencode/slash`).
 
 **`SKILL.md` body and Markdown files**
 
@@ -238,9 +246,9 @@ func main() {
 }
 ```
 
-`Validate` returns `[]skills.Problem`. A `Problem` has a `Severity` (`SeverityError` or `SeverityWarning`) and `Details`, the message text. Today every problem is an error and the command fails on any problem. Build `Problem` values with keyed literals: fields may be added later.
+`Validate` returns `[]skills.Problem`. A `Problem` has a `Severity` (`SeverityError` or `SeverityWarning`) and `Details`, the message text. Keys that Claude Code defines on top of the specification are reported as `SeverityWarning`; everything else is `SeverityError`. The command fails only on errors, unless `--strict` is set. Build `Problem` values with keyed literals: fields may be added later.
 
-To check every skill in a bundle folder, use `skills.LoadAll(root)` (returns loaded skills and the skipped ones with reasons), then `v.ValidateAll(loaded)` and `skills.WarningLines(...)`, where `v` is the validator from `skills.NewValidator()`. Pass options to configure it: `skills.NewValidator(skills.WithMaxProblems(20))` keeps at most 20 problems per skill (the default is no limit).
+To check every skill in a bundle folder, use `skills.LoadAll(root)` (returns loaded skills and the skipped ones with reasons), then `v.ValidateAll(loaded)` and `skills.WarningLines(...)`, where `v` is the validator from `skills.NewValidator()`. Pass options to configure it: `skills.NewValidator(skills.WithMaxProblems(20))` keeps at most 20 problems per skill (the default is no limit). `skills.WithStrict()` reports warnings as errors, the same as `--strict`.
 
 ## Build
 

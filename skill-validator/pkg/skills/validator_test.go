@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// validate loads the skill in dir/<name> and returns its findings.
-func validate(t *testing.T, root, name string, opts ...Option) []string {
+// validateProblems loads the skill in dir/<name> and returns its problems.
+func validateProblems(t *testing.T, root, name string, opts ...Option) []Problem {
 	t.Helper()
 	s, err := Load(root + "/" + name)
 	if err != nil {
@@ -18,8 +18,15 @@ func validate(t *testing.T, root, name string, opts ...Option) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return problems
+}
+
+// validate returns the texts of the problems in dir/<name>, which must all be
+// errors.
+func validate(t *testing.T, root, name string, opts ...Option) []string {
+	t.Helper()
 	var out []string
-	for _, p := range problems {
+	for _, p := range validateProblems(t, root, name, opts...) {
 		if p.Severity != SeverityError {
 			t.Errorf("problem %q has severity %v, want error", p.Details, p.Severity)
 		}
@@ -303,6 +310,56 @@ func TestOptionalFieldChecks(t *testing.T) {
 				t.Errorf("got  %q\nwant %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestHarnessFields(t *testing.T) {
+	const head = "---\nname: s\ndescription: d\n"
+	const warn = `SKILL.md: harness-specific frontmatter field %q (Claude Code only, not in the Agent Skills specification)`
+	tests := []struct {
+		name string
+		fm   string // extra frontmatter lines
+		opts []Option
+		want []Problem
+	}{
+		{"claude field is a warning", "argument-hint: '[issue]'\n", nil, []Problem{
+			{Severity: SeverityWarning, Details: fmt.Sprintf(warn, "argument-hint")},
+		}},
+		{"underscore field", "when_to_use: when asked\n", nil, []Problem{
+			{Severity: SeverityWarning, Details: fmt.Sprintf(warn, "when_to_use")},
+		}},
+		{"typo stays an error", "argument-hnt: x\n", nil, []Problem{
+			{Severity: SeverityError, Details: `SKILL.md: unknown frontmatter field "argument-hnt"`},
+		}},
+		{"errors first, warnings sorted", "paths: a\narguments: b\nzeta: 1\n", nil, []Problem{
+			{Severity: SeverityError, Details: `SKILL.md: unknown frontmatter field "zeta"`},
+			{Severity: SeverityWarning, Details: fmt.Sprintf(warn, "arguments")},
+			{Severity: SeverityWarning, Details: fmt.Sprintf(warn, "paths")},
+		}},
+		{"strict turns warnings into errors", "argument-hint: x\n", []Option{WithStrict()}, []Problem{
+			{Severity: SeverityError, Details: fmt.Sprintf(warn, "argument-hint")},
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFiles(t, root, map[string]string{"s/SKILL.md": head + tc.fm + "---\n"})
+			if got := validateProblems(t, root, "s", tc.opts...); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLimitKeepsWarningTailAWarning(t *testing.T) {
+	warn := Problem{Severity: SeverityWarning, Details: "w"}
+	got := limit([]Problem{warn, warn, warn}, 2)
+	if got[1].Severity != SeverityWarning {
+		t.Errorf("tail of dropped warnings = %v, want warning", got[1].Severity)
+	}
+	got = limit([]Problem{warn, warn, {Details: "e"}}, 2)
+	if got[1].Severity != SeverityError {
+		t.Errorf("tail with a dropped error = %v, want error", got[1].Severity)
 	}
 }
 
