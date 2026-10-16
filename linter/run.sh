@@ -125,7 +125,7 @@ lint_go_modules() {
 
   for module_dir in "${modules_to_lint[@]}"; do
     echo "[platform-ci-toolkit] Linting Go module: $module_dir"
-    if ! (cd "$module_dir" && golangci-lint run --config "$golangci_config" ./...); then
+    if ! (cd "$module_dir" && golangci-lint run --timeout=15m --config "$golangci_config" ./...); then
       go_status=1
     fi
   done

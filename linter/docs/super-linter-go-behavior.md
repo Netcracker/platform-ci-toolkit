@@ -1,6 +1,6 @@
 # How Super-Linter handles Go
 
-This page describes how GitHub Super-Linter v6 runs Go linters, why it times out on multi-module repositories such as Cloud Backuper, what this image does instead, and which alternative approaches were tried and rejected.
+This page describes how GitHub Super-Linter v9 runs Go linters, why its `GO_MODULES` mode times out on multi-module repositories such as Cloud Backuper, what this image does instead, and which alternative approaches were tried and rejected.
 
 ## How Super-Linter dispatches linters
 
@@ -87,18 +87,18 @@ You can disable the custom Go runner by setting `PLATFORM_CI_CUSTOM_GO_LINT=fals
 
 ### Generating a `go.work` file and using Super-Linter's `GO_MODULES`
 
-A natural fix is to generate a temporary `go.work` file that includes every module, warm the Go cache, and let Super-Linter's `GO_MODULES` run `golangci-lint` once. This approach was implemented and tested, but it failed because the Go toolchain inside Super-Linter v6 (1.22.3 at the time of testing) is older than the one Cloud Backuper requires. The `go` command cannot parse `services/backuper-service/go.mod`:
+A natural fix is to generate a temporary `go.work` file that includes every module, warm the Go cache, and let Super-Linter's `GO_MODULES` run `golangci-lint` once. This approach was implemented and tested against Super-Linter v6, but it failed because the Go toolchain inside v6 (1.22.3 at the time of testing) was older than the one Cloud Backuper requires. The `go` command could not parse `services/backuper-service/go.mod`:
 
 ```text
 go: errors parsing services/backuper-service/go.mod:
 services/backuper-service/go.mod:238: unknown directive: tool
 ```
 
-Cloud Backuper uses the `tool` directive (introduced in Go 1.24) and declares `go 1.27.1`, so Super-Linter v6 cannot create or consume a workspace for it. This approach only works for repositories whose `go.mod` files are compatible with the Go toolchain inside the Super-Linter image.
+Cloud Backuper uses the `tool` directive and declares `go 1.27.1`. The current image is based on Super-Linter v9, which ships a Go 1.27.1 toolchain, so the parse error is gone. However, generating a workspace still does not solve the scope problem: Super-Linter's `GO_MODULES` runs `golangci-lint` from the repository root and tries to load every module at once, which times out on large repositories. The custom per-module runner remains the chosen approach.
 
 ### Changing `DEFAULT_WORKSPACE` per module
 
-`DEFAULT_WORKSPACE` tells Super-Linter where the checkout is, but Super-Linter still initializes every linter, scans repository metadata, and runs `golangci-lint` from the same root. A test run with `DEFAULT_WORKSPACE` set to a single module reached the 10-minute timeout while still gathering the file list, so this approach is not practical with Super-Linter v6.
+`DEFAULT_WORKSPACE` tells Super-Linter where the checkout is, but Super-Linter still initializes every linter, scans repository metadata, and runs `golangci-lint` from the same root. A test run with `DEFAULT_WORKSPACE` set to a single module reached the 10-minute timeout while still gathering the file list, so this approach is not practical.
 
 ### Pre-populating the Go cache alone
 
@@ -107,3 +107,11 @@ Pre-warming `GOMODCACHE` and `GOCACHE` removes the time spent downloading depend
 ### Persisting a `.go-cache` directory inside the repository mount
 
 A `.go-cache/` directory inside the mounted repository was tried so CI systems could persist it between jobs. The first implementation used `find ... -not -path '*/.go-cache/*'` to skip the cache, but `find` still descended into the cache directory and the cache also contained `go.mod` files from downloaded dependencies. On Cloud Backuper the search reported 152 modules instead of 10. Using `find -prune` and adding `.go-cache/` to `FILTER_REGEX_EXCLUDE` fixed the search, but the approach still added complexity and a directory that could be committed by accident, so it was removed in favor of running `lint_go_modules` directly without a shared cache.
+
+## Private modules and credentials
+
+Even with the correct Go toolchain, the custom Go linter cannot analyze modules that depend on private repositories unless `go` can fetch them. Without credentials, `go` blocks while waiting for a username; the current runner uses a 15-minute `golangci-lint` timeout so the job fails instead of hanging. The usual fixes are:
+
+- In GitLab CI, rewrite `https://git.netcracker.com/` URLs to use `gitlab-ci-token:${CI_JOB_TOKEN}` before running `make lint`.
+- Mount a pre-populated `go/pkg/mod` cache that already contains the required private-module versions.
+- Provide a `.netrc` or equivalent token inside the container.

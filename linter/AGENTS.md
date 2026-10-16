@@ -1,6 +1,6 @@
 # Common Linter
 
-This directory builds the Netcracker common linter image. The image extends GitHub Super-Linter v6 with organization-wide defaults and adds a custom per-module Go linter for repositories that contain multiple Go modules. Keep `README.md` and `docs/linting.md` / `docs/super-linter-go-behavior.md` in sync with behavior changes.
+This directory builds the Netcracker common linter image. The image extends GitHub Super-Linter v9 with organization-wide defaults and adds a custom per-module Go linter for repositories that contain multiple Go modules. Keep `README.md` and `docs/linting.md` / `docs/super-linter-go-behavior.md` in sync with behavior changes.
 
 ## Commands
 
@@ -16,7 +16,7 @@ make lint                  # run the linter against the parent repository
 
 - `Dockerfile`: multi-stage-ish build that installs `make` on top of the official Super-Linter image and copies baseline rules plus `run.sh`.
 - `run.sh`: container entry point. Copies baseline linter configs to a writable directory, overlays consumer rules from `/tmp/lint/prechecks/custom-liners/`, loads environment files, and dispatches to Super-Linter or the custom Go linter.
-- `super-linter.env`: baseline environment for Super-Linter. Disables languages that are not commonly used and enables `PLATFORM_CI_CUSTOM_GO_LINT`.
+- `super-linter.env`: baseline environment for Super-Linter. Disables languages that are not commonly used (including Super-Linter's own Go linters `VALIDATE_GO` and `VALIDATE_GO_MODULES`) and enables `PLATFORM_CI_CUSTOM_GO_LINT`.
 - `prechecks/base-linters/`: default linter rule files.
 - `templates/Makefile.consumer`: copy this into consumer repositories to call the linter both locally and in CI.
 - `docs/`: `linting.md` describes current behavior; `super-linter-go-behavior.md` includes the full history and rejected alternatives.

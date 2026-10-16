@@ -23,12 +23,18 @@ else
 	@exit 1
 endif
 
+# Forward common Go module environment variables so local runs can use an
+# internal GOPROXY (e.g. Artifactory) or disable sum verification for private
+# modules. These are only passed through if set in the caller's environment.
 LINTER_ENV ?= \
 	-e RUN_LOCAL=true \
 	-e DEFAULT_BRANCH=master \
 	-e VALIDATE_ALL_CODEBASE=false \
 	-e FILTER_REGEX_INCLUDE \
-	-e FILTER_REGEX_EXCLUDE
+	-e FILTER_REGEX_EXCLUDE \
+	-e GOPROXY \
+	-e GOSUMDB \
+	-e GONOSUMDB
 
 LINTER_VOLUMES ?= \
 	-v "$(REPO_ROOT):/tmp/lint"
@@ -58,6 +64,8 @@ lint_go_modules:
 lint-fix:
 	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
 
+# Run only the custom per-module Go linter for one service.
+# This does NOT run Super-Linter (Markdown/YAML/JSON/Dockerfile/etc.).
 lint-module:
 ifdef MODULE
 	FILTER_REGEX_INCLUDE="services/$(MODULE)/.*" /usr/local/bin/run.sh go
@@ -95,6 +103,8 @@ lint-fix: ensure-linter-image
 		$(LINTER_VOLUMES) \
 		$(LINTER_IMAGE_FULL) super-linter
 
+# Run only the custom per-module Go linter for one service.
+# This does NOT run Super-Linter (Markdown/YAML/JSON/Dockerfile/etc.).
 lint-module: ensure-linter-image
 ifdef MODULE
 	FILTER_REGEX_INCLUDE="services/$(MODULE)/.*" $(LINTER_RUN) go

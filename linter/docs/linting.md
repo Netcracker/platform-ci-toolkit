@@ -4,7 +4,7 @@ This document describes the current Go linting behavior of the platform-ci-toolk
 
 ## How it works
 
-The common linter image is based on GitHub Super-Linter v6 and adds a custom Go module linter. The wrapper script `/usr/local/bin/run.sh` exposes three commands:
+The common linter image is based on GitHub Super-Linter v9 and adds a custom Go module linter. The wrapper script `/usr/local/bin/run.sh` exposes three commands:
 
 | Command | What it runs |
 | --- | --- |
@@ -19,9 +19,11 @@ Consumer repositories invoke these commands through the `Makefile` template so t
 ```bash
 make lint                 # Super-Linter + custom Go linter
 make lint_go_modules      # custom Go linter only
-make lint-module MODULE=backuper-service
+make lint-module MODULE=backuper-service  # custom Go linter for one module only
 make lint-fix             # Super-Linter with auto-fix enabled
 ```
+
+> **Note:** `make lint-module` runs **only** the custom Go linter for the requested module. It does not run Super-Linter (Markdown, YAML, JSON, Dockerfile, etc.). Use `make lint` when you need the full suite, or `make super-linter` for Super-Linter alone.
 
 In CI, the reusable workflow runs inside the linter container with `--entrypoint=""`, `RUN_LOCAL=true`, and executes `make lint`. In local mode, the Makefile pulls the image and runs it via Docker. `RUN_LOCAL=true` is required whenever Super-Linter is not running inside GitHub Actions, so CI pipelines set it as well.
 
@@ -88,7 +90,7 @@ Both Super-Linter and the custom Go linter are executed, and the final exit code
      - Finds every `go.mod` under `/tmp/lint`, skipping `vendor/` and `.git/`.
      - Respects `FILTER_REGEX_INCLUDE` if set (used by `make lint-module`).
      - Without a filter, limits modules to those with changed `.go` files vs `DEFAULT_BRANCH`.
-     - Runs `golangci-lint run --config <merged> ./...` once per selected module from inside that module directory.
+      - Runs `golangci-lint run --timeout=15m --config <merged> ./...` once per selected module from inside that module directory.
    - `all`: runs both and returns a non-zero exit code if either part fails.
 
 ## Custom Go linter
@@ -106,8 +108,32 @@ By default, only modules that contain changed `.go` files (compared with `DEFAUL
 
 Baseline rules live in `prechecks/base-linters` inside the linter image. A consumer repository can override them by placing files in `prechecks/custom-liners/`, including a `super-linter.env` file for environment overrides.
 
-The baseline `super-linter.env` disables `VALIDATE_GO_MODULES` and enables `PLATFORM_CI_CUSTOM_GO_LINT=true`. Set `PLATFORM_CI_CUSTOM_GO_LINT=false` to fall back to Super-Linter's default Go behavior.
+The baseline `super-linter.env` disables Super-Linter's own Go linters (`VALIDATE_GO` and `VALIDATE_GO_MODULES`) and enables `PLATFORM_CI_CUSTOM_GO_LINT=true`. The custom per-module Go linter is therefore responsible for all Go linting. Set `PLATFORM_CI_CUSTOM_GO_LINT=false` to fall back to Super-Linter's default Go behavior.
 
-## Caching
+## Private Go module authentication
 
 There is no shared Go module or build cache. The per-module `golangci-lint` runs rely on the normal Go download behavior inside the container. Earlier trials that used a `.go-cache` directory were removed to keep the integration simple and avoid accidentally linting cached dependency files.
+
+If a module depends on a private repository (for example, `git.netcracker.com`), `go` needs credentials inside the container. Without them, the custom Go linter appears to hang while `go` waits for a username; the current `golangci-lint` timeout limits this to 15 minutes and the run fails with an authentication error. To lint such modules, choose one of the following approaches:
+
+1. **Use an internal Go module proxy (recommended if available).** If your organization publishes private modules to an internal proxy such as Artifactory, set `GOPROXY` and optionally `GOSUMDB`/`GONOSUMDB` before running the linter. The consumer Makefile forwards these variables into the container automatically:
+   ```bash
+   export GOPROXY='https://artifactorycn.netcracker.com/pd.saas.golang.dev,https://artifactorycn.netcracker.com/pd.saas-release.golang.group'
+   export GOSUMDB=off
+   make lint-module MODULE=backuper-service
+   ```
+
+2. **Configure GitLab `CI_JOB_TOKEN` in CI (recommended for GitLab).** Add this step to the Super Linter job before `make lint`:
+   ```bash
+   git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
+   make lint
+   ```
+   `CI_JOB_TOKEN` is provided automatically by GitLab runners.
+
+3. **Mount a pre-populated Go module cache.** Mount the host or CI cache `go/pkg/mod` directory into the container and set `GOMODCACHE=/go/pkg/mod`. The cache must already contain the exact versions of any private modules; otherwise `go` will still try to fetch them.
+
+4. **Mount a `.netrc` file or inject a token.** Provide a `.netrc` with machine credentials, or pass a token as an environment variable and configure `git config url.<token-url>.insteadOf` before linting.
+    - For GitLab personal/group access tokens, use `https://oauth2:<token>@git.netcracker.com/` as the rewritten URL.
+    - For GitLab CI job tokens, use `https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/`.
+
+Without one of these, `make lint-module` on repositories such as Cloud Backuper fails while fetching `git.netcracker.com/prod.platform.cloud_core/libs/go/security/v3`.
