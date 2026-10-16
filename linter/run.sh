@@ -48,6 +48,27 @@ run_super_linter() {
   return $?
 }
 
+# Run Super-Linter with only its own Go linters enabled.
+# Super-Linter rejects a mix of VALIDATE_*=true and VALIDATE_*=false, and the
+# baseline env disables many linters with false. To enable only GO, unset all
+# linter-specific false flags, then explicitly enable GO.
+run_super_linter_with_go() {
+  local validate_all_codebase="${VALIDATE_ALL_CODEBASE:-}"
+  local var
+
+  for var in $(env | grep -E '^VALIDATE_[A-Z_]+=false$' | grep -v '^VALIDATE_ALL_CODEBASE=' | cut -d= -f1); do
+    unset "$var"
+  done
+
+  if [ -n "$validate_all_codebase" ]; then
+    export VALIDATE_ALL_CODEBASE="$validate_all_codebase"
+  fi
+
+  export VALIDATE_GO=true
+  export VALIDATE_GO_MODULES=true
+  run_super_linter
+}
+
 # Run golangci-lint for the Go modules that need linting. Super-Linter's
 # GO_MODULES linter is disabled because it loads the whole repository at
 # once and times out in multi-module repositories. The custom runner:
@@ -144,6 +165,10 @@ case "$command" in
     run_super_linter
     exit $?
     ;;
+  super-linter-go)
+    run_super_linter_with_go
+    exit $?
+    ;;
   all)
     set +e
     run_super_linter
@@ -160,7 +185,7 @@ case "$command" in
     ;;
   *)
     echo "[platform-ci-toolkit] Unknown command: $command"
-    echo "[platform-ci-toolkit] Usage: run.sh [super-linter|go|all]"
+    echo "[platform-ci-toolkit] Usage: run.sh [super-linter|super-linter-go|go|all]"
     exit 1
     ;;
 esac

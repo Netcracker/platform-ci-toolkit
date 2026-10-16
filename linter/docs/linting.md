@@ -4,12 +4,13 @@ This document describes the current Go linting behavior of the platform-ci-toolk
 
 ## How it works
 
-The common linter image is based on GitHub Super-Linter v9 and adds a custom Go module linter. The wrapper script `/usr/local/bin/run.sh` exposes three commands:
+The common linter image is based on GitHub Super-Linter v9 and adds a custom Go module linter. The wrapper script `/usr/local/bin/run.sh` exposes these commands:
 
 | Command | What it runs |
 | --- | --- |
 | `run.sh` (no argument) | Super-Linter for non-Go files, then the custom Go linter |
-| `run.sh super-linter` | Super-Linter only |
+| `run.sh super-linter` | Super-Linter only (Go checks disabled) |
+| `run.sh super-linter-go` | Super-Linter only, with its own Go/GO_MODULES checks enabled |
 | `run.sh go` | Custom per-module Go linter only |
 
 Consumer repositories invoke these commands through the `Makefile` template so the same targets work both in CI pipelines and locally.
@@ -17,10 +18,12 @@ Consumer repositories invoke these commands through the `Makefile` template so t
 ## Makefile targets
 
 ```bash
-make lint                 # Super-Linter + custom Go linter
-make lint_go_modules      # custom Go linter only
+make lint                       # Super-Linter + custom Go linter
+make lint_go_modules            # custom Go linter only
 make lint-module MODULE=backuper-service  # custom Go linter for one module only
-make lint-fix             # Super-Linter with auto-fix enabled
+make super-linter               # Super-Linter only (Go checks disabled)
+make super-linter-with-go       # Super-Linter only, with its own Go checks enabled
+make lint-fix                   # Super-Linter with auto-fix enabled
 ```
 
 > **Note:** `make lint-module` runs **only** the custom Go linter for the requested module. It does not run Super-Linter (Markdown, YAML, JSON, Dockerfile, etc.). Use `make lint` when you need the full suite, or `make super-linter` for Super-Linter alone.
@@ -69,7 +72,8 @@ Both Super-Linter and the custom Go linter are executed, and the final exit code
 | Argument | Behavior |
 | --- | --- |
 | `run.sh` (no argument) | Same as `run.sh all`. Runs Super-Linter for non-Go files, then the custom Go linter. |
-| `run.sh super-linter` | Runs only Super-Linter. |
+| `run.sh super-linter` | Runs only Super-Linter with Go checks disabled. |
+| `run.sh super-linter-go` | Runs only Super-Linter with its own Go/GO_MODULES checks enabled. |
 | `run.sh go` | Runs only `lint_go_modules`, the custom per-module Go linter. |
 | `run.sh all` | Runs Super-Linter, then `lint_go_modules`, and exits non-zero if either fails. |
 
@@ -108,7 +112,7 @@ By default, only modules that contain changed `.go` files (compared with `DEFAUL
 
 Baseline rules live in `prechecks/base-linters` inside the linter image. A consumer repository can override them by placing files in `prechecks/custom-liners/`, including a `super-linter.env` file for environment overrides.
 
-The baseline `super-linter.env` disables Super-Linter's own Go linters (`VALIDATE_GO` and `VALIDATE_GO_MODULES`) and enables `PLATFORM_CI_CUSTOM_GO_LINT=true`. The custom per-module Go linter is therefore responsible for all Go linting. Set `PLATFORM_CI_CUSTOM_GO_LINT=false` to fall back to Super-Linter's default Go behavior.
+The baseline `super-linter.env` disables Super-Linter's own Go linters (`VALIDATE_GO` and `VALIDATE_GO_MODULES`) and enables `PLATFORM_CI_CUSTOM_GO_LINT=true`. The custom per-module Go linter is therefore responsible for all Go linting during `make lint`. To run Super-Linter's own Go checks for comparison or verification, use `make super-linter-with-go` / `run.sh super-linter-go`.
 
 ## Private Go module authentication
 

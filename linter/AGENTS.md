@@ -24,7 +24,7 @@ make lint                  # run the linter against the parent repository
 ## Rules that are not obvious from the code
 
 - **No shared Go cache.** Earlier trials that mounted `.go-cache/` were removed to keep the integration simple and avoid accidentally linting cached dependency files. The per-module `golangci-lint` runs rely on the normal Go download behavior inside the container.
-- **Custom Go linter is driven through the Makefile.** `run.sh` exposes `super-linter` and `go` commands; the consumer `Makefile` maps `make lint`, `make lint_go_modules`, `make super-linter`, `make lint-module`, and `make lint-fix` to them.
+- **Custom Go linter is driven through the Makefile.** `run.sh` exposes `super-linter`, `super-linter-go`, and `go` commands; the consumer `Makefile` maps `make lint`, `make lint_go_modules`, `make super-linter`, `make super-linter-with-go`, `make lint-module`, and `make lint-fix` to them.
 - **Super-Linter `RUN_LOCAL=true` is required in CI too.** It only tells Super-Linter that it is not running inside GitHub Actions; GitLab CI and local runs both set it.
 - **Image registry and component name:** the CI build workflow reads `.qubership/docker.cfg`. The component is named `linter`, so the published image is `ghcr.io/netcracker/linter`.
 - **Entry point behavior:** `Dockerfile` sets `ENTRYPOINT ["/usr/local/bin/run.sh"]` and `CMD ["all"]`. CI workflows disable the entry point with `--entrypoint=""` (GitHub Actions) or `entrypoint: [""]` (GitLab CI) so that `make lint` runs as the container command.
