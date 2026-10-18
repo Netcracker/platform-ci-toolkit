@@ -1,6 +1,8 @@
 # How Super-Linter handles Go
 
-This page describes how GitHub Super-Linter v9 runs Go linters, why its `GO_MODULES` mode times out on multi-module repositories such as Cloud Backuper, what this image does instead, and which alternative approaches were tried and rejected.
+> **Current behavior:** The common linter image now relies on Super-Linter’s built-in `GO_MODULES` check. The custom per-module Go linter described in the historical sections below has been removed. `make lint` runs Super-Linter only; `make lint-filter FILTER=...` can narrow the scope to a specific module or folder.
+
+This page describes how GitHub Super-Linter v9 runs Go linters, why its `GO_MODULES` mode can time out on multi-module repositories such as Cloud Backuper, and which alternative approaches were tried and rejected.
 
 ## How Super-Linter dispatches linters
 
@@ -54,22 +56,23 @@ named files must all be in one directory
 
 See [super-linter/super-linter#6294](https://github.com/super-linter/super-linter/issues/6294).
 
-## What this image does instead
+## What this image does now
 
-`run.sh` exposes two commands:
+`run.sh` runs Super-Linter directly. Go linting is handled by Super-Linter’s built-in `GO` / `GO_MODULES` checks, just like any other language.
 
-- `run.sh super-linter` runs Super-Linter for all non-Go languages.
-- `run.sh go` runs the custom per-module Go linter.
-
-Both are invoked through the consumer `Makefile` so the same command works in CI pipelines and locally:
+The consumer `Makefile` provides these targets:
 
 ```bash
-make lint              # Super-Linter + custom Go linter
-make lint_go_modules   # custom Go linter only
-make lint-module MODULE=backuper-service
+make lint                                # Super-Linter on changed files
+make lint-filter FILTER=services/backuper-service/.*  # Super-Linter on a filtered set
+make lint-fix                            # Super-Linter with auto-fix enabled
 ```
 
-The custom Go linter runs `golangci-lint` separately for each module:
+Because `VALIDATE_ALL_CODEBASE=false` is set by default, Super-Linter only lints changed files and the Go modules that contain those changed files. To lint a single module regardless of what changed, use `make lint-filter FILTER=services/backuper-service/.*`.
+
+### Historical note: custom per-module Go linter
+
+Earlier versions of this image added a custom per-module Go linter to avoid the whole-repository `GO_MODULES` timeout described above. It ran `golangci-lint` separately for each module:
 
 ```bash
 cd services/backuper-service && golangci-lint run --config .golangci.yml ./...
@@ -77,7 +80,7 @@ cd services/trimmer-velero && golangci-lint run --config .golangci.yml ./...
 # ... one run per module
 ```
 
-Each run starts inside a module directory that contains its own `go.mod`, so `golangci-lint` analyzes only that module. This avoids the whole-repository timeout.
+This approach was later removed to keep the common linter aligned with standard Super-Linter behavior and to reduce maintenance overhead.
 
 `lint_go_modules` respects `FILTER_REGEX_INCLUDE`, so `make lint-module MODULE=...` limits linting to a single service. When no filter is set, it only lints modules that contain `.go` files changed since `DEFAULT_BRANCH`.
 

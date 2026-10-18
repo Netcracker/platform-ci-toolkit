@@ -47,42 +47,28 @@ LINTER_RUN ?= docker run --rm \
 ifeq ($(CI),true)
 
 # CI mode: we are already running inside the linter container.
-.PHONY: lint super-linter super-linter-with-go lint_go_modules lint-fix lint-module
+.PHONY: lint lint-filter lint-fix
 
 lint:
-	@super_status=0; go_status=0; \
-	/usr/local/bin/run.sh super-linter || super_status=$$?; \
-	/usr/local/bin/run.sh go || go_status=$$?; \
-	if [ "$$super_status" -ne 0 ] || [ "$$go_status" -ne 0 ]; then exit 1; fi
-
-super-linter:
 	/usr/local/bin/run.sh super-linter
 
-# Run Super-Linter with its own GO / GO_MODULES checks enabled.
-# The default super-linter target disables these because the custom Go linter handles Go.
-super-linter-with-go:
-	/usr/local/bin/run.sh super-linter-go
-
-lint_go_modules:
-	/usr/local/bin/run.sh go
+# Run the full Super-Linter suite against a filtered set of files.
+# FILTER is a regex relative to the repo root, e.g.:
+#   make lint-filter FILTER=services/backuper-service/.*
+lint-filter:
+ifndef FILTER
+	@echo "Set FILTER to a regex, for example: make lint-filter FILTER=services/backuper-service/.*"
+	@exit 1
+endif
+	FILTER_REGEX_INCLUDE="$(FILTER)" /usr/local/bin/run.sh super-linter
 
 lint-fix:
 	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
 
-# Run only the custom per-module Go linter for one service.
-# This does NOT run Super-Linter (Markdown/YAML/JSON/Dockerfile/etc.).
-lint-module:
-ifdef MODULE
-	FILTER_REGEX_INCLUDE="services/$(MODULE)/.*" /usr/local/bin/run.sh go
-else
-	@echo "Set MODULE to the service directory name, for example: make lint-module MODULE=backuper-service"
-	@exit 1
-endif
-
 else
 
 # Local mode: run the linter container via Docker.
-.PHONY: ensure-linter-image lint super-linter super-linter-with-go lint_go_modules lint-fix lint-module
+.PHONY: ensure-linter-image lint lint-filter lint-fix
 
 ensure-linter-image:
 	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
@@ -91,18 +77,17 @@ ensure-linter-image:
 	fi
 
 lint: ensure-linter-image
-	$(LINTER_RUN)
-
-super-linter: ensure-linter-image
 	$(LINTER_RUN) super-linter
 
-# Run Super-Linter with its own GO / GO_MODULES checks enabled.
-# The default super-linter target disables these because the custom Go linter handles Go.
-super-linter-with-go: ensure-linter-image
-	$(LINTER_RUN) super-linter-go
-
-lint_go_modules: ensure-linter-image
-	$(LINTER_RUN) go
+# Run the full Super-Linter suite against a filtered set of files.
+# FILTER is a regex relative to the repo root, e.g.:
+#   make lint-filter FILTER=services/backuper-service/.*
+lint-filter: ensure-linter-image
+ifndef FILTER
+	@echo "Set FILTER to a regex, for example: make lint-filter FILTER=services/backuper-service/.*"
+	@exit 1
+endif
+	FILTER_REGEX_INCLUDE="$(FILTER)" $(LINTER_RUN) super-linter
 
 lint-fix: ensure-linter-image
 	docker run --rm \
@@ -112,15 +97,5 @@ lint-fix: ensure-linter-image
 		$(LINTER_ENV) \
 		$(LINTER_VOLUMES) \
 		$(LINTER_IMAGE_FULL) super-linter
-
-# Run only the custom per-module Go linter for one service.
-# This does NOT run Super-Linter (Markdown/YAML/JSON/Dockerfile/etc.).
-lint-module: ensure-linter-image
-ifdef MODULE
-	FILTER_REGEX_INCLUDE="services/$(MODULE)/.*" $(LINTER_RUN) go
-else
-	@echo "Set MODULE to the service directory name, for example: make lint-module MODULE=backuper-service"
-	@exit 1
-endif
 
 endif
