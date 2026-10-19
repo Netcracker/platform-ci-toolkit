@@ -1,0 +1,99 @@
+# Consumer Makefile template for platform-ci-toolkit / Super-Linter.
+# Copy this file into a consumer repository as Makefile (or include it)
+# and adjust the variables below if needed.
+#
+# This Makefile works in two modes:
+#   - Local: it pulls the linter image and runs it via Docker.
+#   - CI:    it runs /usr/local/bin/run.sh directly because the job already
+#            executes inside the linter container.
+
+LINTER_IMAGE ?= ghcr.io/netcracker/linter
+LINTER_TAG ?= latest
+LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
+
+REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+# Optional: synchronize this Makefile from the upstream template.
+# Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer.
+sync-linter-makefile:
+ifdef PLATFORM_CI_TOOLKIT_RAW_URL
+	curl -fsSL -o $(REPO_ROOT)/Makefile.linter $(PLATFORM_CI_TOOLKIT_RAW_URL)
+else
+	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer"
+	@exit 1
+endif
+
+# Forward common Go module environment variables so local runs can use an
+# internal GOPROXY (e.g. Artifactory) or disable sum verification for private
+# modules. These are only passed through if set in the caller's environment.
+LINTER_ENV ?= \
+	-e RUN_LOCAL=true \
+	-e DEFAULT_BRANCH=master \
+	-e VALIDATE_ALL_CODEBASE=false \
+	-e FILTER_REGEX_INCLUDE \
+	-e FILTER_REGEX_EXCLUDE \
+	-e GOPROXY
+
+LINTER_VOLUMES ?= \
+	-v "$(REPO_ROOT):/tmp/lint"
+
+LINTER_RUN ?= docker run --rm \
+	$(LINTER_ENV) \
+	$(LINTER_VOLUMES) \
+	$(LINTER_IMAGE_FULL)
+
+ifeq ($(CI),true)
+
+# CI mode: we are already running inside the linter container.
+.PHONY: lint lint-filter lint-fix
+
+lint:
+	/usr/local/bin/run.sh super-linter
+
+# Run the full Super-Linter suite against a filtered set of files.
+# FILTER is a regex relative to the repo root, e.g.:
+#   make lint-filter FILTER=services/backuper-service/.*
+lint-filter:
+ifndef FILTER
+	@echo "Set FILTER to a regex, for example: make lint-filter FILTER=services/backuper-service/.*"
+	@exit 1
+endif
+	FILTER_REGEX_INCLUDE="$(FILTER)" /usr/local/bin/run.sh super-linter
+
+lint-fix:
+	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
+
+else
+
+# Local mode: run the linter container via Docker.
+.PHONY: ensure-linter-image lint lint-filter lint-fix
+
+ensure-linter-image:
+	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
+		echo "Pulling $(LINTER_IMAGE_FULL)..."; \
+		docker pull $(LINTER_IMAGE_FULL); \
+	fi
+
+lint: ensure-linter-image
+	$(LINTER_RUN) super-linter
+
+# Run the full Super-Linter suite against a filtered set of files.
+# FILTER is a regex relative to the repo root, e.g.:
+#   make lint-filter FILTER=services/backuper-service/.*
+lint-filter: ensure-linter-image
+ifndef FILTER
+	@echo "Set FILTER to a regex, for example: make lint-filter FILTER=services/backuper-service/.*"
+	@exit 1
+endif
+	FILTER_REGEX_INCLUDE="$(FILTER)" $(LINTER_RUN) super-linter
+
+lint-fix: ensure-linter-image
+	docker run --rm \
+		-e FIX_GO=true \
+		-e FIX_MARKDOWN=true \
+		-e FIX_YAML_PRETTIER=true \
+		$(LINTER_ENV) \
+		$(LINTER_VOLUMES) \
+		$(LINTER_IMAGE_FULL) super-linter
+
+endif

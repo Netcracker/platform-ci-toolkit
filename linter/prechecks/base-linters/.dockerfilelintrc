@@ -1,0 +1,4 @@
+# Dockerfile linting baseline
+rules:
+  missing_tag: warning
+  latest_tag: warning
