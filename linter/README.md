@@ -23,9 +23,10 @@ The image is built and published by the repository's `CI: Dev Docker Build` work
 From a consumer repository that contains the consumer `Makefile` template:
 
 ```bash
-make lint              # Run Super-Linter and the custom Go module linter
-make lint_go_modules   # Run only the custom Go module linter
-make lint-module MODULE=backuper-service
+make lint                                   # Run Super-Linter on changed files
+make lint-filter FILTER=<regex>             # Run Super-Linter on a filtered set of files
+make lint-fix                               # Run Super-Linter with auto-fix enabled
 ```
 
-See `templates/Makefile.consumer` for the template, `docs/super-linter-go-behavior.md` for how Go linting works, and `super-linter.env` for baseline environment variables.
+For full usage instructions, including CI and GitHub Actions examples, see `docs/usage.md`.
+See `templates/Makefile.consumer` for the template, `docs/linting.md` for Go linting details, and `super-linter.env` for baseline environment variables.
