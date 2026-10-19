@@ -4,6 +4,20 @@ This document explains how to use the `platform-ci-toolkit` common linter locall
 
 The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. Consumer repositories copy the `templates/Makefile.consumer` template so the same targets work locally and in CI.
 
+## Default linters
+
+The common linter does not enable linters explicitly. Instead, it relies on Super-Linter's auto-detection and only disables languages that are not commonly used in the target repositories.
+
+- `super-linter.env` in this repository sets `VALIDATE_<LANGUAGE>=false` for languages such as Java, Kotlin, Terraform, XML, JavaScript, TypeScript, Ruby, PHP, etc.
+- All other Super-Linter v9 languages are auto-detected: when a changed file matches a language, its linters run automatically.
+
+For the full list of supported linters and the meaning of each `VALIDATE_*` variable, see the upstream Super-Linter documentation:
+
+- [Supported linters](https://github.com/super-linter/super-linter#supported-linters)
+- [Environment variables](https://github.com/super-linter/super-linter/blob/main/docs/run-linter-locally.md)
+
+A consumer repository can override the baseline by placing `prechecks/custom-liners/super-linter.env` in its own repository.
+
 ---
 
 ## Local usage
@@ -150,7 +164,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `VALIDATE_ALL_CODEBASE` | `false` lints changed files only; `true` lints everything. |
 | `FILTER_REGEX_INCLUDE` | Regex for files to include (used by `lint-filter`). |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
-| `GOPROXY` / `GOSUMDB` / `GONOSUMDB` | Go module proxy and sum-database settings for private modules. |
+| `GOPROXY` / `GOSUMDB` | Go module proxy and sum-database settings for private modules. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.
 
