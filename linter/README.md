@@ -1,6 +1,6 @@
 # Common Linter
 
-This directory builds the Netcracker common linter image. The image extends [GitHub Super-Linter](https://github.com/super-linter/super-linter) with organization-wide defaults and supports per-module Go linting for repositories that contain multiple Go modules.
+This directory builds the common linter image. The image extends [GitHub Super-Linter](https://github.com/super-linter/super-linter) with organization-wide defaults and supports per-module Go linting for repositories that contain multiple Go modules.
 
 ## Build
 
@@ -24,9 +24,9 @@ From a consumer repository that contains the consumer `Makefile` template:
 
 ```bash
 make lint                                   # Run Super-Linter on changed files
-make lint-filter FILTER=<regex>             # Run Super-Linter on a filtered set of files
+make lint FILTER=<regex>                    # Run Super-Linter on a filtered set of files
 make lint-fix                               # Run Super-Linter with auto-fix enabled
 ```
 
 For full usage instructions, including CI and GitHub Actions examples, see `docs/usage.md`.
-See `templates/Makefile.consumer` for the template, `docs/linting.md` for Go linting details, and `super-linter.env` for baseline environment variables.
+See `templates/Makefile.consumer` for the template, `docs/usage.md` for usage instructions, and `super-linter.env` for baseline environment variables.

@@ -45,20 +45,14 @@ LINTER_RUN ?= docker run --rm \
 ifeq ($(CI),true)
 
 # CI mode: we are already running inside the linter container.
-.PHONY: lint lint-filter lint-fix
+.PHONY: lint lint-fix
 
 lint:
-	/usr/local/bin/run.sh super-linter
-
-# Run the full Super-Linter suite against a filtered set of files.
-# FILTER is a regex relative to the repo root, e.g.:
-#   make lint-filter FILTER=services/backuper-service/.*
-lint-filter:
-ifndef FILTER
-	@echo "Set FILTER to a regex, for example: make lint-filter FILTER=services/backuper-service/.*"
-	@exit 1
-endif
+ifdef FILTER
 	FILTER_REGEX_INCLUDE="$(FILTER)" /usr/local/bin/run.sh super-linter
+else
+	/usr/local/bin/run.sh super-linter
+endif
 
 lint-fix:
 	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
@@ -66,7 +60,7 @@ lint-fix:
 else
 
 # Local mode: run the linter container via Docker.
-.PHONY: ensure-linter-image lint lint-filter lint-fix
+.PHONY: ensure-linter-image lint lint-fix
 
 ensure-linter-image:
 	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
@@ -75,17 +69,11 @@ ensure-linter-image:
 	fi
 
 lint: ensure-linter-image
-	$(LINTER_RUN) super-linter
-
-# Run the full Super-Linter suite against a filtered set of files.
-# FILTER is a regex relative to the repo root, e.g.:
-#   make lint-filter FILTER=services/backuper-service/.*
-lint-filter: ensure-linter-image
-ifndef FILTER
-	@echo "Set FILTER to a regex, for example: make lint-filter FILTER=services/backuper-service/.*"
-	@exit 1
-endif
+ifdef FILTER
 	FILTER_REGEX_INCLUDE="$(FILTER)" $(LINTER_RUN) super-linter
+else
+	$(LINTER_RUN) super-linter
+endif
 
 lint-fix: ensure-linter-image
 	docker run --rm \

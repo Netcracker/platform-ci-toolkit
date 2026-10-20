@@ -2,7 +2,7 @@ ARG SUPER_LINTER_VERSION=slim-v9
 FROM ghcr.io/super-linter/super-linter:${SUPER_LINTER_VERSION}
 
 LABEL org.opencontainers.image.source="https://github.com/netcracker/platform-ci-toolkit"
-LABEL org.opencontainers.image.description="Netcracker common linter image based on Super-Linter"
+LABEL org.opencontainers.image.description="Common linter image based on Super-Linter"
 
 # Install make so that consumer Makefiles can be invoked both locally and in CI.
 USER root

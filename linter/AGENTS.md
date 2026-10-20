@@ -1,6 +1,6 @@
 # Common Linter
 
-This directory builds the Netcracker common linter image. The image extends GitHub Super-Linter v9 with organization-wide defaults. Keep `README.md`, `docs/usage.md`, and `docs/linting.md` in sync with behavior changes.
+This directory builds the common linter image. The image extends GitHub Super-Linter v9 with organization-wide defaults. Keep `README.md` and `docs/usage.md` in sync with behavior changes.
 
 ## Commands
 
@@ -25,7 +25,7 @@ make lint                  # run the linter against the parent repository
 
 - **No shared Go cache.** Earlier trials that mounted `.go-cache/` were removed to keep the integration simple and avoid accidentally linting cached dependency files. Super-Linter’s `GO_MODULES` relies on the normal Go download behavior inside the container.
 - **Super-Linter only.** `make lint` runs Super-Linter; there is no separate custom Go linter step.
-- **`make lint-filter` runs the full Super-Linter suite on a filtered set of files.** Set `FILTER` to a regex relative to the repo root, for example `make lint-filter FILTER=services/backuper-service/.*`.
+- **Set `FILTER` to run the full Super-Linter suite on a filtered set of files.** Set `FILTER` to a regex relative to the repo root, for example `make lint FILTER=services/backuper-service/.*`.
 - **Super-Linter `RUN_LOCAL=true` is required in CI too.** It only tells Super-Linter that it is not running inside GitHub Actions; GitLab CI and local runs both set it.
 - **Image registry and component name:** the CI build workflow reads `.qubership/docker.cfg`. The component is named `linter`, so the published image is `ghcr.io/netcracker/linter`.
 - **Entry point behavior:** `Dockerfile` sets `ENTRYPOINT ["/usr/local/bin/run.sh"]` and `CMD ["all"]`. CI workflows disable the entry point with `--entrypoint=""` (GitHub Actions) or `entrypoint: [""]` (GitLab CI) so that `make lint` runs as the container command.

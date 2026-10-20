@@ -32,8 +32,7 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 
 | Target | Purpose |
 | --- | --- |
-| `make lint` | Run Super-Linter on changed files only. |
-| `make lint-filter FILTER=<regex>` | Run Super-Linter on files matching a regex relative to the repo root. |
+| `make lint` | Run Super-Linter on changed files only. Set `FILTER=<regex>` to lint only matching files. |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
 
 ### Run on changed files
@@ -46,10 +45,10 @@ Super-Linter compares `HEAD` against `DEFAULT_BRANCH` (default `master`) and lin
 
 ### Run on a subset of files
 
-For repositories with multiple Go modules, linting the whole repo can be slow or time out. Use `lint-filter` to lint a single module or directory:
+For repositories with multiple Go modules, linting the whole repo can be slow or time out. Set `FILTER` to lint a single module or directory:
 
 ```bash
-make lint-filter FILTER=services/backuper-service/.*
+make lint FILTER=services/backuper-service/.*
 ```
 
 This still runs the **full** Super-Linter suite (Markdown, YAML, Dockerfile, Go, Python, etc.), but only against files matching the regex.
@@ -108,11 +107,11 @@ super-linter:
     - make lint
 ```
 
-For private `git.netcracker.com` Go modules, configure GitLab authentication before linting:
+For private Go modules hosted on an internal Git server, configure GitLab authentication before linting:
 
 ```yaml
   script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.<private-git-host>.com/".insteadOf "https://git.<private-git-host>.com/"
     - make lint
 ```
 
@@ -162,7 +161,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `RUN_LOCAL` | Must be `true` when not running inside GitHub Actions. |
 | `DEFAULT_BRANCH` | Branch Super-Linter compares against when `VALIDATE_ALL_CODEBASE=false`. |
 | `VALIDATE_ALL_CODEBASE` | `false` lints changed files only; `true` lints everything. |
-| `FILTER_REGEX_INCLUDE` | Regex for files to include (used by `lint-filter`). |
+| `FILTER_REGEX_INCLUDE` | Regex for files to include (set via `FILTER`). |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
 | `GOPROXY` | Go module proxy for private modules. |
 
@@ -176,10 +175,10 @@ Additional Super-Linter variables can be set via `prechecks/custom-liners/super-
 
 ### `make lint` times out on multi-module repositories
 
-Use `make lint-filter` to lint one module at a time:
+Set `FILTER` to lint one module at a time:
 
 ```bash
-make lint-filter FILTER=services/backuper-service/.*
+make lint FILTER=services/backuper-service/.*
 ```
 
 ### Private Go modules fail to download
