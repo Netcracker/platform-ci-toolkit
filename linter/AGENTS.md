@@ -18,8 +18,8 @@ make lint                  # run the linter against the parent repository
 - `run.sh`: container entry point. Copies baseline linter configs to a writable directory, overlays consumer rules from `/tmp/lint/prechecks/custom-liners/`, loads environment files, and dispatches to Super-Linter.
 - `super-linter.env`: baseline environment for Super-Linter. Disables languages that are not commonly used; Go is left enabled so Super-Linter runs `GO` / `GO_MODULES`.
 - `prechecks/base-linters/`: default linter rule files.
-- `templates/Makefile.consumer`: copy this into consumer repositories to call the linter both locally and in CI.
-- `docs/`: `usage.md` explains how to run the linter locally, in CI, and in GitHub Actions; `linting.md` describes current Go behavior.
+- `templates/Makefile.consumer`: full standalone consumer Makefile. Copy it into consumer repositories. It provides host-side `verify`, `test`, `test-go`, and `test-python` targets that run outside the linter container. `verify` runs lint followed by tests, `test-go` auto-detects Go modules and applies `FILTER` to both linting and testing, and both `test-go` and `test-python` skip when no relevant files changed against `DEFAULT_BRANCH`.
+- `docs/`: `usage.md` explains how to run the linter locally, in CI, and in GitHub Actions, including test and verify targets.
 
 ## Rules that are not obvious from the code
 

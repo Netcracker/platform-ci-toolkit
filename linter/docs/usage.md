@@ -25,7 +25,7 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 ### Prerequisites
 
 - Docker installed and running.
-- A consumer `Makefile` based on `templates/Makefile.consumer`.
+- A consumer `Makefile` based on `templates/Makefile.consumer` copied into the consumer repository.
 - The repository root mounted at `/tmp/lint` inside the container (handled by the Makefile).
 
 ### Makefile targets
@@ -34,6 +34,11 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 | --- | --- |
 | `make lint` | Run Super-Linter on changed files only. Set `FILTER=<regex>` to lint only matching files. |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
+| `make verify` | Run lint followed by tests. |
+
+### Consumer Makefile setup
+
+Copy `templates/Makefile.consumer` from `platform-ci-toolkit/linter` into the consumer repository as `Makefile`. Adjust the variables at the top of the file if needed.
 
 ### Run on changed files
 
@@ -75,6 +80,47 @@ After the run, review the changes with `git diff` and commit them.
 - **Not all linters support auto-fix.** The consumer template only enables fix mode for Go, Markdown, and YAML. Linters such as `GO_MODULES` (`errcheck`, `staticcheck`, etc.), `PYLINT`, `MYPY`, and `RUFF` report issues that must be fixed manually.
 - **Fixes are written to the working tree.** The consumer Makefile mounts the repository root into the container, so Super-Linter can modify files directly. Run `git diff` afterwards to review and commit only the intended changes.
 - **Python auto-fix is not enabled by default.** If you want Ruff or Black to auto-fix Python files, extend the `lint-fix` target with `FIX_PYTHON_RUFF=true` or `FIX_PYTHON_BLACK=true` (supported by Super-Linter v9).
+
+### Run tests and verify
+
+The consumer Makefile template includes test targets, but tests run **outside** the common linter container, either locally on a host with the required toolchain or in a dedicated CI job.
+
+```bash
+make verify      # Run lint and tests
+make test        # Run test-go and test-python
+make test-go     # Auto-detect Go modules and run go test ./... where tests exist
+make test-python # Placeholder; override in the consumer Makefile
+```
+
+`make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` only for those modules. By default, Go tests run only if `.go` or `go.mod` files changed against `DEFAULT_BRANCH` (`master`). If no relevant files changed, the target prints a skip message and exits successfully.
+
+If `FILTER` is set, only modules whose path matches the regex are tested. For example:
+
+```bash
+make verify FILTER=services/backuper-service/.*
+```
+
+This runs lint and tests only for `services/backuper-service` and its subpackages.
+
+To target multiple folders, use a regex alternation:
+
+```bash
+make verify FILTER='services/(backuper-service|trimmer-velero)/.*'
+```
+
+`FILTER` is passed directly to Super-Linter as `FILTER_REGEX_INCLUDE` and is also used by `test-go` to select Go modules. Quote the value so the shell preserves the regex.
+
+`GO_TEST_MODULES` can be set explicitly to override auto-detection:
+
+```make
+GO_TEST_MODULES := \
+	services/backuper-service \
+	services/trimmer-velero
+```
+
+`make test-python` also checks for changed `.py` files against `DEFAULT_BRANCH` before running. The actual test command is controlled by `PYTHON_TEST_CMD` and must be configured by the consumer. If no Python files changed, the target skips.
+
+Do not run tests inside the common linter container — it is built for static analysis only and may lack the Go toolchain, Python dependencies, or runtime services needed for tests.
 
 ---
 

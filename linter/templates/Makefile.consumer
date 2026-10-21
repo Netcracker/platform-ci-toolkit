@@ -12,6 +12,7 @@ LINTER_TAG ?= latest
 LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
 
 REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+DEFAULT_BRANCH ?= master
 
 # Optional: synchronize this Makefile from the upstream template.
 # Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer.
@@ -23,12 +24,11 @@ else
 	@exit 1
 endif
 
-# Forward common Go module environment variables so local runs can use an
-# internal GOPROXY (e.g. Artifactory) or disable sum verification for private
-# modules. These are only passed through if set in the caller's environment.
+# Forward environment variables used by the common linter. They are only passed
+# through if set in the caller's environment.
 LINTER_ENV ?= \
 	-e RUN_LOCAL=true \
-	-e DEFAULT_BRANCH=master \
+	-e DEFAULT_BRANCH=$(DEFAULT_BRANCH) \
 	-e VALIDATE_ALL_CODEBASE=false \
 	-e FILTER_REGEX_INCLUDE \
 	-e FILTER_REGEX_EXCLUDE \
@@ -41,6 +41,83 @@ LINTER_RUN ?= docker run --rm \
 	$(LINTER_ENV) \
 	$(LINTER_VOLUMES) \
 	$(LINTER_IMAGE_FULL)
+
+# Test targets run on the host or in a dedicated CI image, NOT inside the common
+# linter container. GO_TEST_MODULES is auto-detected from go.mod files. Set it
+# explicitly to override. If FILTER is set, only modules matching the regex are tested.
+GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -exec dirname {} \;)
+PYTHON_TEST_CMD ?= echo "[test-python] No test command configured. Set PYTHON_TEST_CMD or override this target."
+
+.PHONY: verify test test-go test-python
+
+verify:
+	@lint_failed=0; test_failed=0; \
+	echo "=== Running lint ==="; \
+	$(MAKE) --no-print-directory lint || { echo "[verify] lint failed"; lint_failed=1; }; \
+	echo ""; \
+	echo "=== Running tests ==="; \
+	$(MAKE) --no-print-directory test || { echo "[verify] test failed"; test_failed=1; }; \
+	echo ""; \
+	if [ "$$lint_failed" -eq 1 ] || [ "$$test_failed" -eq 1 ]; then \
+		echo "[verify] FAILED"; \
+		exit 1; \
+	fi; \
+	echo "[verify] SUCCESS"
+
+test: test-go test-python
+
+test-go:
+	@filter="$(FILTER)"; \
+	repo_root="$(REPO_ROOT)"; \
+	repo_root="$${repo_root%/}"; \
+	base_branch="$(DEFAULT_BRANCH)"; \
+	echo "[test-go] FILTER=$$filter"; \
+	echo "[test-go] REPO_ROOT=$$repo_root"; \
+	echo "[test-go] DEFAULT_BRANCH=$$base_branch"; \
+	if git -C "$$repo_root" rev-parse --verify "$$base_branch" >/dev/null 2>&1; then \
+		if ! git -C "$$repo_root" diff --name-only "$$base_branch" -- | grep -Eq '\.(go|mod)$$'; then \
+			echo "[test-go] No Go or go.mod files changed against $$base_branch; skipping"; \
+			exit 0; \
+		fi; \
+		echo "[test-go] Go or go.mod files changed against $$base_branch"; \
+	else \
+		echo "[test-go] Default branch $$base_branch not found; running all Go tests"; \
+	fi; \
+	modules="$(GO_TEST_MODULES)"; \
+	if [ -z "$$modules" ]; then \
+		echo "[test-go] No Go modules found"; \
+		exit 0; \
+	fi; \
+	echo "[test-go] Detected modules: $$modules"; \
+	for mod in $$modules; do \
+		rel_mod="$${mod#$$repo_root/}"; \
+		if [ -n "$$filter" ] && ! echo "$$rel_mod" | grep -Eq "$$filter" && ! echo "$$rel_mod/" | grep -Eq "$$filter"; then \
+			echo "[test-go] Skipping $$rel_mod (does not match FILTER)"; \
+			continue; \
+		fi; \
+		if find "$$mod" -name '*_test.go' -print -quit | grep -q .; then \
+			echo "=== Testing $$rel_mod ==="; \
+			(cd "$$mod" && go test ./...); \
+		else \
+			echo "[test-go] Skipping $$rel_mod (no Go tests found)"; \
+		fi; \
+	done
+
+test-python:
+	@repo_root="$(REPO_ROOT)"; \
+	repo_root="$${repo_root%/}"; \
+	base_branch="$(DEFAULT_BRANCH)"; \
+	if git -C "$$repo_root" rev-parse --verify "$$base_branch" >/dev/null 2>&1; then \
+		if ! git -C "$$repo_root" diff --name-only "$$base_branch" -- | grep -Eq '\.py$$'; then \
+			echo "[test-python] No Python files changed against $$base_branch; skipping"; \
+			exit 0; \
+		fi; \
+		echo "[test-python] Python files changed against $$base_branch"; \
+	else \
+		echo "[test-python] Default branch $$base_branch not found; running Python tests"; \
+	fi; \
+	echo "=== Running Python tests ==="; \
+	$(PYTHON_TEST_CMD)
 
 ifeq ($(CI),true)
 
