@@ -14,6 +14,12 @@ LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
 REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 DEFAULT_BRANCH ?= master
 
+# Skill validation image and patterns. Patterns are space-separated globs relative
+# to REPO_ROOT. If SKILLCHECK_PATTERNS is empty or no directories match,
+# the skillcheck target is skipped.
+SKILLCHECK_IMAGE ?= artifactorycn.netcracker.com:17152/netcracker/skillcheck:latest
+SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
+
 # Optional: synchronize this Makefile from the upstream template.
 # Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer.
 sync-linter-makefile:
@@ -48,17 +54,20 @@ LINTER_RUN ?= docker run --rm \
 GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -exec dirname {} \;)
 PYTHON_TEST_CMD ?= echo "[test-python] No test command configured. Set PYTHON_TEST_CMD or override this target."
 
-.PHONY: verify test test-go test-python
+.PHONY: verify test test-go test-python skillcheck
 
 verify:
-	@lint_failed=0; test_failed=0; \
+	@lint_failed=0; test_failed=0; skillcheck_failed=0; \
 	echo "=== Running lint ==="; \
 	$(MAKE) --no-print-directory lint || { echo "[verify] lint failed"; lint_failed=1; }; \
 	echo ""; \
 	echo "=== Running tests ==="; \
 	$(MAKE) --no-print-directory test || { echo "[verify] test failed"; test_failed=1; }; \
 	echo ""; \
-	if [ "$$lint_failed" -eq 1 ] || [ "$$test_failed" -eq 1 ]; then \
+	echo "=== Running skillcheck ==="; \
+	$(MAKE) --no-print-directory skillcheck || { echo "[verify] skillcheck failed"; skillcheck_failed=1; }; \
+	echo ""; \
+	if [ "$$lint_failed" -eq 1 ] || [ "$$test_failed" -eq 1 ] || [ "$$skillcheck_failed" -eq 1 ]; then \
 		echo "[verify] FAILED"; \
 		exit 1; \
 	fi; \
@@ -119,6 +128,43 @@ test-python:
 	echo "=== Running Python tests ==="; \
 	$(PYTHON_TEST_CMD)
 
+skillcheck:
+ifndef SKILLCHECK_PATTERNS
+	@echo "[skillcheck] SKILLCHECK_PATTERNS not set; skipping"
+else
+	@repo_root="$(REPO_ROOT)"; \
+	repo_root="$${repo_root%/}"; \
+	patterns="$(SKILLCHECK_PATTERNS)"; \
+	image="$(SKILLCHECK_IMAGE)"; \
+	cd "$$repo_root" || exit 1; \
+	set --; \
+	for p in $$patterns; do \
+		for dir in $$p; do \
+			[ -d "$$dir" ] && set -- "$$@" "$$dir"; \
+		done; \
+	done; \
+	if [ "$$#" -eq 0 ]; then \
+		echo "[skillcheck] No folders match: $(SKILLCHECK_PATTERNS); skipping"; \
+		exit 0; \
+	fi; \
+	echo "[skillcheck] Validating $$# folder(s):"; \
+	printf '  %s\n' "$$@"; \
+	if command -v skillcheck >/dev/null 2>&1; then \
+		skillcheck "$$@"; \
+	else \
+		if [ -z "$$(docker images -q "$$image")" ]; then \
+			echo "[skillcheck] Pulling $$image..."; \
+			docker pull "$$image"; \
+		fi; \
+		docker run --rm \
+			-v "$$repo_root:$$repo_root" \
+			-w "$$repo_root" \
+			--entrypoint="" \
+			"$$image" \
+			skillcheck "$$@"; \
+	fi
+endif
+
 ifeq ($(CI),true)
 
 # CI mode: we are already running inside the linter container.
@@ -136,13 +182,19 @@ lint-fix:
 
 else
 
-# Local mode: run the linter container via Docker.
-.PHONY: ensure-linter-image lint lint-fix
+# Local mode: run the linter and skillcheck containers via Docker.
+.PHONY: ensure-linter-image ensure-skillcheck-image lint lint-fix
 
 ensure-linter-image:
 	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
 		echo "Pulling $(LINTER_IMAGE_FULL)..."; \
 		docker pull $(LINTER_IMAGE_FULL); \
+	fi
+
+ensure-skillcheck-image:
+	@if [ -z "$$(docker images -q $(SKILLCHECK_IMAGE))" ]; then \
+		echo "Pulling $(SKILLCHECK_IMAGE)..."; \
+		docker pull $(SKILLCHECK_IMAGE); \
 	fi
 
 lint: ensure-linter-image

@@ -86,10 +86,11 @@ After the run, review the changes with `git diff` and commit them.
 The consumer Makefile template includes test targets, but tests run **outside** the common linter container, either locally on a host with the required toolchain or in a dedicated CI job.
 
 ```bash
-make verify      # Run lint and tests
+make verify      # Run lint, tests, and skillcheck
 make test        # Run test-go and test-python
 make test-go     # Auto-detect Go modules and run go test ./... where tests exist
 make test-python # Placeholder; override in the consumer Makefile
+make skillcheck  # Validate skill packages with the skillcheck image
 ```
 
 `make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` only for those modules. By default, Go tests run only if `.go` or `go.mod` files changed against `DEFAULT_BRANCH` (`master`). If no relevant files changed, the target prints a skip message and exits successfully.
@@ -119,6 +120,14 @@ GO_TEST_MODULES := \
 ```
 
 `make test-python` also checks for changed `.py` files against `DEFAULT_BRANCH` before running. The actual test command is controlled by `PYTHON_TEST_CMD` and must be configured by the consumer. If no Python files changed, the target skips.
+
+`make skillcheck` validates skill packages using the `skillcheck` container image. Set `SKILLCHECK_PATTERNS` to one or more space-separated globs relative to the repository root:
+
+```make
+SKILLCHECK_PATTERNS := agent-packages/*/.apm/skills
+```
+
+The default pattern is `agent-packages/*/.apm/skills`. `make verify` includes `skillcheck`. If `SKILLCHECK_PATTERNS` is empty or no directories match, `skillcheck` prints a skip message and exits successfully.
 
 Do not run tests inside the common linter container — it is built for static analysis only and may lack the Go toolchain, Python dependencies, or runtime services needed for tests.
 
