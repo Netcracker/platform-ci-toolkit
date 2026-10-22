@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 
+# renovate: datasource=golang-version depName=golang
 ARG GO_VERSION=1.27
 
 # Build every supported platform on the build host (static, no cgo).

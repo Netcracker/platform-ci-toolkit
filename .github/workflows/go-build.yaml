@@ -34,3 +34,12 @@ jobs:
 
     - name: "Test with coverage"
       run: go test -v ./... -coverprofile coverage.out
+
+  approve-renovate:
+    name: Approve Renovate PR
+    needs: build
+    if: github.event.pull_request.user.login == 'renovate[bot]'
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/renovate-approve.yaml
