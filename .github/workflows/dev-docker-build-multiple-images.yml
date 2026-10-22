@@ -67,7 +67,7 @@ jobs:
           persist-credentials: false
 
       - name: Get Configuration File
-        uses: netcracker/qubership-workflow-hub/actions/docker-config-resolver@288a6a0d9a78e80dfdefccab1be6497a39deb746 #v2.8.0
+        uses: netcracker/qubership-workflow-hub/actions/docker-config-resolver@0eefd4976131d113c986281eed8bc642b6da303d # v2.8.1
         id: config
         with:
           file-path: "${{ env.CONFIG_FILE }}"
@@ -90,7 +90,7 @@ jobs:
           persist-credentials: false
 
       - name: "Create name"
-        uses: netcracker/qubership-workflow-hub/actions/metadata-action@288a6a0d9a78e80dfdefccab1be6497a39deb746 # v2.8.0
+        uses: netcracker/qubership-workflow-hub/actions/metadata-action@0eefd4976131d113c986281eed8bc642b6da303d # v2.8.1
         id: metadata
         with:
           default-template: "{{ref-name}}"
@@ -115,7 +115,7 @@ jobs:
           echo "**Tags:** ${{ steps.prepare_tags.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
 
       - name: "Build and Publish Docker Image"
-        uses: netcracker/qubership-workflow-hub/actions/docker-action@288a6a0d9a78e80dfdefccab1be6497a39deb746 #v2.8.0
+        uses: netcracker/qubership-workflow-hub/actions/docker-action@0eefd4976131d113c986281eed8bc642b6da303d # v2.8.1
         with:
           component: ${{ toJson(matrix.component) }}
           platforms: ${{ matrix.component.platforms }}
