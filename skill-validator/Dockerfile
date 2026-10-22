@@ -13,7 +13,7 @@ COPY . .
 ARG VERSION=dev
 RUN make build-all VERSION=${VERSION}
 
-FROM ghcr.io/netcracker/qubership-core-base:alpine-latest
+FROM ghcr.io/netcracker/qubership-core-base:alpine-latest@sha256:0c2c9e4b49e73efffb30edf8d3de8b3eb43194a6c4f688da08ec3236b570b486
 ARG TARGETARCH
 # Binaries for all platforms, to be copied out, e.g.: docker cp <container>:/opt/skillcheck/dist .
 COPY --from=build /src/dist/ /opt/skillcheck/dist/
