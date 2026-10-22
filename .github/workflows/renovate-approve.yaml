@@ -1,0 +1,45 @@
+---
+
+# Approves Renovate PRs so that Renovate can automerge them under the "main"
+# ruleset review requirement. Called from go-build.yaml after CI passes.
+
+name: Renovate Approve
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    if: github.event.pull_request.user.login == 'renovate[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check commits
+        id: commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          rejected=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/commits" \
+            --jq '.[] | select(.author.login != "renovate[bot]" or .commit.verification.verified != true)
+              | "\(.sha) author=\(.author.login // .commit.author.email) verified=\(.commit.verification.verified) (\(.commit.verification.reason))"')
+          if [[ -n "${rejected}" ]]; then
+            echo "PR #${PR_NUMBER} has commits that are not verified or not authored by renovate[bot]; skipping approval:"
+            echo "${rejected}"
+            exit 0
+          fi
+          echo "approve=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Approve pull request
+        if: steps.commits.outputs.approve == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve "${PR_URL}" \
+            --body "Auto-approved: CI passed and all commits are verified and authored by renovate[bot]."
