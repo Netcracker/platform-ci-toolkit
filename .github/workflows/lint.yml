@@ -36,9 +36,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run common linter
+      - name: Run common precheck
         env:
           DEFAULT_BRANCH: ${{ inputs.default_branch }}
           VALIDATE_ALL_CODEBASE: ${{ inputs.validate_all_codebase }}
           RUN_LOCAL: true
-        run: make lint
+        run: make verify

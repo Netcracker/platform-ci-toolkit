@@ -30,6 +30,7 @@ make verify                                 # Run lint and tests
 make verify FILTER=<regex>                  # Run lint and tests on a filtered set of files/modules
 make test                                   # Run Go and Python tests (host or dedicated CI image, not the linter container)
 make test-go                                # Auto-detect Go modules and run go test ./... where tests exist
+make test-python                            # Placeholder; override in the consumer Makefile
 ```
 
 For full usage instructions, including CI and GitHub Actions examples, see `docs/usage.md`.

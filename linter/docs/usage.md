@@ -34,7 +34,7 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 | --- | --- |
 | `make lint` | Run Super-Linter on changed files only. Set `FILTER=<regex>` to lint only matching files. |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
-| `make verify` | Run lint followed by tests. |
+| `make verify` | Run lint followed by tests. This is the target CI should call when a single job is preferred. |
 
 ### Consumer Makefile setup
 
@@ -83,17 +83,16 @@ After the run, review the changes with `git diff` and commit them.
 
 ### Run tests and verify
 
-The consumer Makefile template includes test targets, but tests run **outside** the common linter container, either locally on a host with the required toolchain or in a dedicated CI job.
+The consumer Makefile template includes test targets. Locally, `make verify` runs the linter inside the common linter container and runs tests on the host. In CI, lint and tests each run inside the common linter container.
 
 ```bash
-make verify      # Run lint, tests, and skillcheck
+make verify      # Run lint and tests
 make test        # Run test-go and test-python
 make test-go     # Auto-detect Go modules and run go test ./... where tests exist
 make test-python # Placeholder; override in the consumer Makefile
-make skillcheck  # Validate skill packages with the skillcheck image
 ```
 
-`make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` only for those modules. By default, Go tests run only if `.go` or `go.mod` files changed against `DEFAULT_BRANCH` (`master`). If no relevant files changed, the target prints a skip message and exits successfully.
+`make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` for every module that has tests. By default, `test-go` compares the working tree against `DEFAULT_BRANCH` (`master`) using `git diff --name-only DEFAULT_BRANCH --`, so it includes both committed branch changes and uncommitted working-tree changes. If no `.go`, `go.mod`, or `go.sum` files changed, the target prints a skip message and exits successfully. Otherwise it runs tests in every detected module (subject to `FILTER`).
 
 If `FILTER` is set, only modules whose path matches the regex are tested. For example:
 
@@ -119,17 +118,34 @@ GO_TEST_MODULES := \
 	services/trimmer-velero
 ```
 
-`make test-python` also checks for changed `.py` files against `DEFAULT_BRANCH` before running. The actual test command is controlled by `PYTHON_TEST_CMD` and must be configured by the consumer. If no Python files changed, the target skips.
+`make test-python` checks for changed `.py` files against `DEFAULT_BRANCH` before running. If no Python files changed, the target skips.
 
-`make skillcheck` validates skill packages using the `skillcheck` container image. Set `SKILLCHECK_PATTERNS` to one or more space-separated globs relative to the repository root:
+`PY_BUILD` must be set for Python tests to run. This is intentional: the consumer must explicitly define how Python dependencies are installed. If `PY_BUILD` is empty, `test-python` prints a skip message and exits successfully.
+
+The Python interpreter defaults to `python3`. Override `PYTHON` if the host or CI container only provides `python`:
 
 ```make
-SKILLCHECK_PATTERNS := agent-packages/*/.apm/skills
+PYTHON := python
 ```
 
-The default pattern is `agent-packages/*/.apm/skills`. `make verify` includes `skillcheck`. If `SKILLCHECK_PATTERNS` is empty or no directories match, `skillcheck` prints a skip message and exits successfully.
+When `PY_BUILD` is set, `test-python` performs these steps:
 
-Do not run tests inside the common linter container — it is built for static analysis only and may lack the Go toolchain, Python dependencies, or runtime services needed for tests.
+1. **Build step:** `PY_BUILD` is executed first. Use this to install Python requirements or to build anything the tests need. Examples:
+
+   ```make
+   PY_BUILD := $(PYTHON) -m pip install -r requirements.txt
+   PY_BUILD := make py_build
+   ```
+
+2. **Install pytest:** `$(PYTHON) -m pip install --quiet pytest` runs to ensure the test runner is available.
+
+3. **Run tests:** By default `$(PYTHON) -m pytest` is executed. Override `PYTHON_TEST_CMD` to use a different runner or arguments:
+
+   ```make
+   PYTHON_TEST_CMD := $(PYTHON) -m pytest -q
+   ```
+
+CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and includes the Go and Python runtimes used by `go test` and the Python test command; if your tests need extra runtime services, override the test targets in the consumer Makefile.
 
 ---
 
@@ -137,7 +153,7 @@ Do not run tests inside the common linter container — it is built for static a
 
 ### GitLab CI
 
-The common linter image is designed to run inside a CI job. The CI runner disables the image entry point and executes `make lint` as the container command.
+The common linter image is designed to run inside CI jobs. The CI runner disables the image entry point and executes `make lint` or `make test` (or `make verify`) as the container command.
 
 Key points:
 
@@ -146,10 +162,10 @@ Key points:
 - `CI=true` is set automatically by GitLab runners; the consumer Makefile uses it to select the CI branch.
 - `RUN_LOCAL=true` is required because Super-Linter is not running inside GitHub Actions.
 
-Example `.gitlab-ci.yml` job:
+Example `.gitlab-ci.yml` jobs:
 
 ```yaml
-super-linter:
+lint:
   stage: lint
   image:
     name: ghcr.io/netcracker/linter:latest
@@ -159,7 +175,23 @@ super-linter:
     DEFAULT_BRANCH: "master"
     VALIDATE_ALL_CODEBASE: "false"
   script:
+    # Allow the Go toolchain to fetch private git.netcracker.com modules.
+    # CI_JOB_TOKEN is provided automatically by GitLab runners.
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
     - make lint
+
+tests:
+  stage: lint
+  image:
+    name: ghcr.io/netcracker/linter:latest
+    entrypoint: [""]
+  variables:
+    DEFAULT_BRANCH: "master"
+  script:
+    # Allow the Go toolchain to fetch private git.netcracker.com modules.
+    # CI_JOB_TOKEN is provided automatically by GitLab runners.
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
+    - make test
 ```
 
 For private Go modules hosted on an internal Git server, configure GitLab authentication before linting:
@@ -167,12 +199,12 @@ For private Go modules hosted on an internal Git server, configure GitLab authen
 ```yaml
   script:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.<private-git-host>.com/".insteadOf "https://git.<private-git-host>.com/"
-    - make lint
+    - make verify
 ```
 
 ### GitHub Actions
 
-Use the published image in a workflow step and disable the entry point:
+Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel:
 
 ```yaml
 jobs:
@@ -185,25 +217,39 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run common linter
+      - name: Configure Git authentication for private Go modules
+        run: |
+          git config --global url."https://token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Run lint
         run: make lint
         env:
           RUN_LOCAL: "true"
           DEFAULT_BRANCH: "master"
           VALIDATE_ALL_CODEBASE: "false"
+
+  tests:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/netcracker/linter:latest
+      options: --entrypoint=""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure Git authentication for private Go modules
+        run: |
+          git config --global url."https://token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Run tests
+        run: make test
+        env:
+          DEFAULT_BRANCH: "master"
 ```
 
-For private Go modules, pass a token or configure `git config url.<token-url>.insteadOf` before `make lint`.
+For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
 
 ### Reusable workflows
 
-The consumer `Makefile` abstracts the local-vs-CI difference. In CI the job runs inside the linter container, so the Makefile target is simply:
-
-```bash
-/usr/local/bin/run.sh super-linter
-```
-
-Locally, the Makefile pulls the image and runs the equivalent Docker command.
+The consumer `Makefile` abstracts the local-vs-CI difference. In CI the job should run `make lint` and `make test` inside the linter container; both use the same image and the same `DEFAULT_BRANCH` logic. Locally, `make lint` pulls the linter image and runs Super-Linter inside it, while `make test` runs Go/Python tests directly on the host.
 
 ---
 

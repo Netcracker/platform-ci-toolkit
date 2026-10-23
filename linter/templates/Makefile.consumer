@@ -3,9 +3,10 @@
 # and adjust the variables below if needed.
 #
 # This Makefile works in two modes:
-#   - Local: it pulls the linter image and runs it via Docker.
+#   - Local: it pulls the linter image and runs lint via Docker; tests run on
+#            the host.
 #   - CI:    it runs /usr/local/bin/run.sh directly because the job already
-#            executes inside the linter container.
+#            executes inside the linter container; tests run there too.
 
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= latest
@@ -13,12 +14,6 @@ LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
 
 REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 DEFAULT_BRANCH ?= master
-
-# Skill validation image and patterns. Patterns are space-separated globs relative
-# to REPO_ROOT. If SKILLCHECK_PATTERNS is empty or no directories match,
-# the skillcheck target is skipped.
-SKILLCHECK_IMAGE ?= artifactorycn.netcracker.com:17152/netcracker/skillcheck:latest
-SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
 
 # Optional: synchronize this Makefile from the upstream template.
 # Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer.
@@ -48,26 +43,34 @@ LINTER_RUN ?= docker run --rm \
 	$(LINTER_VOLUMES) \
 	$(LINTER_IMAGE_FULL)
 
-# Test targets run on the host or in a dedicated CI image, NOT inside the common
-# linter container. GO_TEST_MODULES is auto-detected from go.mod files. Set it
-# explicitly to override. If FILTER is set, only modules matching the regex are tested.
+# Test targets run on the host, or inside the common linter container in CI.
+# GO_TEST_MODULES is auto-detected from go.mod files. Set it explicitly to
+# override. If FILTER is set, only modules matching the regex are tested. When
+# a default branch is available and no .go/.mod/.sum files changed, Go tests are
+# skipped. Otherwise go test ./... runs in every detected module (subject to
+# FILTER).
 GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -exec dirname {} \;)
-PYTHON_TEST_CMD ?= echo "[test-python] No test command configured. Set PYTHON_TEST_CMD or override this target."
+# Python interpreter to use for test-python. Override if only `python` is
+# available on the host or in the CI container.
+PYTHON ?= python3
+# Build step for Python tests. Required for test-python to run. It must install
+# test dependencies and can set environment variables such as PYTHONPATH.
+# If empty, no py tests run.
+PY_BUILD ?=
+# Default Python test command. Override to use a different runner or arguments.
+PYTHON_TEST_CMD ?= $(PYTHON) -m pytest
 
-.PHONY: verify test test-go test-python skillcheck
+.PHONY: verify test test-go test-python
 
 verify:
-	@lint_failed=0; test_failed=0; skillcheck_failed=0; \
+	@lint_failed=0; test_failed=0; \
 	echo "=== Running lint ==="; \
 	$(MAKE) --no-print-directory lint || { echo "[verify] lint failed"; lint_failed=1; }; \
 	echo ""; \
 	echo "=== Running tests ==="; \
 	$(MAKE) --no-print-directory test || { echo "[verify] test failed"; test_failed=1; }; \
 	echo ""; \
-	echo "=== Running skillcheck ==="; \
-	$(MAKE) --no-print-directory skillcheck || { echo "[verify] skillcheck failed"; skillcheck_failed=1; }; \
-	echo ""; \
-	if [ "$$lint_failed" -eq 1 ] || [ "$$test_failed" -eq 1 ] || [ "$$skillcheck_failed" -eq 1 ]; then \
+	if [ "$$lint_failed" -eq 1 ] || [ "$$test_failed" -eq 1 ]; then \
 		echo "[verify] FAILED"; \
 		exit 1; \
 	fi; \
@@ -84,11 +87,11 @@ test-go:
 	echo "[test-go] REPO_ROOT=$$repo_root"; \
 	echo "[test-go] DEFAULT_BRANCH=$$base_branch"; \
 	if git -C "$$repo_root" rev-parse --verify "$$base_branch" >/dev/null 2>&1; then \
-		if ! git -C "$$repo_root" diff --name-only "$$base_branch" -- | grep -Eq '\.(go|mod)$$'; then \
-			echo "[test-go] No Go or go.mod files changed against $$base_branch; skipping"; \
+		if ! git -C "$$repo_root" diff --name-only "$$base_branch" -- | grep -Eq '\.(go|mod|sum)$$'; then \
+			echo "[test-go] No Go, go.mod, or go.sum files changed against $$base_branch; skipping"; \
 			exit 0; \
 		fi; \
-		echo "[test-go] Go or go.mod files changed against $$base_branch"; \
+		echo "[test-go] Go, go.mod, or go.sum files changed against $$base_branch"; \
 	else \
 		echo "[test-go] Default branch $$base_branch not found; running all Go tests"; \
 	fi; \
@@ -116,6 +119,10 @@ test-python:
 	@repo_root="$(REPO_ROOT)"; \
 	repo_root="$${repo_root%/}"; \
 	base_branch="$(DEFAULT_BRANCH)"; \
+	if [ -z "$(PY_BUILD)" ]; then \
+		echo "[test-python] PY_BUILD not set; skipping"; \
+		exit 0; \
+	fi; \
 	if git -C "$$repo_root" rev-parse --verify "$$base_branch" >/dev/null 2>&1; then \
 		if ! git -C "$$repo_root" diff --name-only "$$base_branch" -- | grep -Eq '\.py$$'; then \
 			echo "[test-python] No Python files changed against $$base_branch; skipping"; \
@@ -126,44 +133,12 @@ test-python:
 		echo "[test-python] Default branch $$base_branch not found; running Python tests"; \
 	fi; \
 	echo "=== Running Python tests ==="; \
+	echo "[test-python] Running PY_BUILD: $(PY_BUILD)"; \
+	$(PY_BUILD) || exit 1; \
+	echo "[test-python] Installing pytest"; \
+	$(PYTHON) -m pip install --quiet pytest || exit 1; \
+	echo "[test-python] Running: $(PYTHON_TEST_CMD)"; \
 	$(PYTHON_TEST_CMD)
-
-skillcheck:
-ifndef SKILLCHECK_PATTERNS
-	@echo "[skillcheck] SKILLCHECK_PATTERNS not set; skipping"
-else
-	@repo_root="$(REPO_ROOT)"; \
-	repo_root="$${repo_root%/}"; \
-	patterns="$(SKILLCHECK_PATTERNS)"; \
-	image="$(SKILLCHECK_IMAGE)"; \
-	cd "$$repo_root" || exit 1; \
-	set --; \
-	for p in $$patterns; do \
-		for dir in $$p; do \
-			[ -d "$$dir" ] && set -- "$$@" "$$dir"; \
-		done; \
-	done; \
-	if [ "$$#" -eq 0 ]; then \
-		echo "[skillcheck] No folders match: $(SKILLCHECK_PATTERNS); skipping"; \
-		exit 0; \
-	fi; \
-	echo "[skillcheck] Validating $$# folder(s):"; \
-	printf '  %s\n' "$$@"; \
-	if command -v skillcheck >/dev/null 2>&1; then \
-		skillcheck "$$@"; \
-	else \
-		if [ -z "$$(docker images -q "$$image")" ]; then \
-			echo "[skillcheck] Pulling $$image..."; \
-			docker pull "$$image"; \
-		fi; \
-		docker run --rm \
-			-v "$$repo_root:$$repo_root" \
-			-w "$$repo_root" \
-			--entrypoint="" \
-			"$$image" \
-			skillcheck "$$@"; \
-	fi
-endif
 
 ifeq ($(CI),true)
 
@@ -182,19 +157,13 @@ lint-fix:
 
 else
 
-# Local mode: run the linter and skillcheck containers via Docker.
-.PHONY: ensure-linter-image ensure-skillcheck-image lint lint-fix
+# Local mode: run the linter container for lint targets; run tests on the host.
+.PHONY: ensure-linter-image lint lint-fix
 
 ensure-linter-image:
 	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
 		echo "Pulling $(LINTER_IMAGE_FULL)..."; \
 		docker pull $(LINTER_IMAGE_FULL); \
-	fi
-
-ensure-skillcheck-image:
-	@if [ -z "$$(docker images -q $(SKILLCHECK_IMAGE))" ]; then \
-		echo "Pulling $(SKILLCHECK_IMAGE)..."; \
-		docker pull $(SKILLCHECK_IMAGE); \
 	fi
 
 lint: ensure-linter-image
