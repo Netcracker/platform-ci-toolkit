@@ -2,7 +2,7 @@
 
 This document explains how to use the `platform-ci-toolkit` common linter locally, in CI pipelines, and in GitHub Actions workflows.
 
-The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. Consumer repositories copy the `templates/Makefile.consumer` template so the same targets work locally and in CI.
+The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories copy the `templates/Makefile.consumer` template so the same targets work locally and in CI.
 
 ## Default linters
 
@@ -32,7 +32,9 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 
 | Target | Purpose |
 | --- | --- |
-| `make lint` | Run Super-Linter on changed files only. Set `FILTER=<regex>` to lint only matching files. |
+| `make lint` | Run Super-Linter and skill validation (when `SKILLCHECK_PATTERNS` is set). Set `FILTER=<regex>` to lint only matching files. |
+| `make lint-super-linter` | Run Super-Linter only. |
+| `make skill-validate` | Run `skillcheck` only (skips if `SKILLCHECK_PATTERNS` is empty). |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
 | `make verify` | Run lint followed by tests. This is the target CI should call when a single job is preferred. |
 
@@ -57,6 +59,27 @@ make lint FILTER=services/backuper-service/.*
 ```
 
 This still runs the **full** Super-Linter suite (Markdown, YAML, Dockerfile, Go, Python, etc.), but only against files matching the regex.
+
+### Skill validation
+
+`make lint` also runs `make skill-validate` when `SKILLCHECK_PATTERNS` is set in the consumer `Makefile` or environment. `make skill-validate` invokes `skillcheck` directly and can be run on its own.
+
+Patterns are shell globs relative to the repository root that point to skill bundles or individual skill folders. Directories that do not contain a `SKILL.md` file (or a direct subdirectory with one) are silently ignored, so generic patterns do not fail the lint job when no skills are present.
+
+Example in a consumer `Makefile`:
+
+```make
+SKILLCHECK_PATTERNS ?= .opencode/skills
+```
+
+In CI, set the same variable in the job variables:
+
+```yaml
+  variables:
+    SKILLCHECK_PATTERNS: ".opencode/skills"
+```
+
+If `SKILLCHECK_PATTERNS` is empty, `make skill-validate` prints a skip message and exits successfully, so `make lint` still runs Super-Linter only.
 
 ### Run with auto-fix
 
@@ -265,6 +288,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `FILTER_REGEX_INCLUDE` | Regex for files to include (set via `FILTER`). |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
 | `GOPROXY` | Go module proxy for private modules. |
+| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Empty (default) disables skill validation. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.
 
