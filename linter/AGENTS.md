@@ -14,7 +14,7 @@ make lint                  # run the linter against the parent repository
 
 ## Layout
 
-- `Dockerfile`: installs `make` on top of the official Super-Linter image, copies the `skillcheck` binary from the published skillcheck image, and copies baseline rules plus `run.sh`.
+- `Dockerfile`: installs `make` on top of the official Super-Linter image, copies the `skillcheck` binary from the public `ghcr.io/netcracker/skillcheck` image (pinned by digest), and copies baseline rules plus `run.sh`.
 - `run.sh`: container entry point. Copies baseline linter configs to a writable directory, overlays consumer rules from `/tmp/lint/prechecks/custom-liners/`, loads environment files, runs Super-Linter, and runs `skillcheck` when `SKILLCHECK_PATTERNS` is configured.
 - `super-linter.env`: baseline environment for Super-Linter. Disables languages that are not commonly used; Go is left enabled so Super-Linter runs `GO` / `GO_MODULES`.
 - `prechecks/base-linters/`: default linter rule files.

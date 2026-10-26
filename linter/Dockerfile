@@ -1,5 +1,6 @@
 ARG SUPER_LINTER_VERSION=slim-v9
-ARG SKILLCHECK_IMAGE=artifactorycn.netcracker.com:17152/netcracker/skillcheck:latest
+# Pin skillcheck to a public GHCR digest for reproducible builds.
+ARG SKILLCHECK_IMAGE=ghcr.io/netcracker/skillcheck:common_linter_integration@sha256:2a0dcf5e80ebee88aae3cf5c2f9c4425a5cc9ba04da81d32ede265bdf7fffac5
 
 FROM ${SKILLCHECK_IMAGE} AS skillcheck
 
