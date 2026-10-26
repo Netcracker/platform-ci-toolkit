@@ -9,6 +9,11 @@ FROM ghcr.io/super-linter/super-linter:${SUPER_LINTER_VERSION}
 LABEL org.opencontainers.image.source="https://github.com/netcracker/platform-ci-toolkit"
 LABEL org.opencontainers.image.description="Common linter image based on Super-Linter with skillcheck"
 
+# Place the Go module cache inside the repository so CI systems can save and
+# restore it. Consumers must set GOPROXY themselves if the default public proxy
+# is unreachable or when private modules are used.
+ENV GOMODCACHE="/tmp/lint/.go/pkg/mod"
+
 # Install make so that consumer Makefiles can be invoked both locally and in CI.
 USER root
 RUN if command -v apk >/dev/null 2>&1; then \

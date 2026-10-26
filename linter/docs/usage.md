@@ -185,6 +185,7 @@ Key points:
 - `CI=true` is set automatically by GitLab runners; the consumer Makefile uses it to select the CI branch.
 - `RUN_LOCAL=true` is required because Super-Linter is not running inside GitHub Actions.
 - The common linter expects the repository at `/tmp/lint`. `run.sh` automatically links `/tmp/lint` to `CI_PROJECT_DIR` (GitLab) or `GITHUB_WORKSPACE` (GitHub Actions) when the expected path is missing.
+- The image sets `GOMODCACHE=/tmp/lint/.go/pkg/mod` so Go modules are cached inside the repository and can be saved/restored by CI. `GOPROXY` is not hardcoded in the image; set it in your CI variables if the default public proxy is unreachable or you need an internal proxy.
 
 Example `.gitlab-ci.yml` jobs:
 
@@ -198,6 +199,12 @@ lint:
     RUN_LOCAL: "true"
     DEFAULT_BRANCH: "master"
     VALIDATE_ALL_CODEBASE: "false"
+    # Set GOPROXY as a CI/CD or group variable if the default public proxy
+    # is unreachable or you need a private module proxy.
+  cache:
+    - key: "go-mod-cache-$CI_PROJECT_NAME-lint"
+      paths:
+        - .go/pkg/mod
   script:
     # Allow the Go toolchain to fetch private git.netcracker.com modules.
     # CI_JOB_TOKEN is provided automatically by GitLab runners.
@@ -211,6 +218,12 @@ tests:
     entrypoint: [""]
   variables:
     DEFAULT_BRANCH: "master"
+    # Set GOPROXY as a CI/CD or group variable if the default public proxy
+    # is unreachable or you need a private module proxy.
+  cache:
+    - key: "go-mod-cache-$CI_PROJECT_NAME"
+      paths:
+        - .go/pkg/mod
   script:
     # Allow the Go toolchain to fetch private git.netcracker.com modules.
     # CI_JOB_TOKEN is provided automatically by GitLab runners.
@@ -260,6 +273,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: .go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: Configure Git authentication for private Go modules
         run: |
           git config --global url."https://token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
@@ -267,6 +287,8 @@ jobs:
         run: make test
         env:
           DEFAULT_BRANCH: "master"
+          # Set GOPROXY if the default public proxy is unreachable or you need a private module proxy.
+          GOPROXY: ${{ vars.GOPROXY }}
 ```
 
 For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
@@ -288,7 +310,8 @@ The consumer Makefile forwards the following variables into the linter container
 | `VALIDATE_ALL_CODEBASE` | `false` lints changed files only; `true` lints everything. |
 | `FILTER_REGEX_INCLUDE` | Regex for files to include (set via `FILTER`). |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
-| `GOPROXY` | Go module proxy for private modules. |
+| `GOPROXY` | Go module proxy. Set this in CI when the default public proxy is unreachable or for private modules. |
+| `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod` so CI systems can cache it inside the repository. |
 | `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Empty (default) disables skill validation. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.

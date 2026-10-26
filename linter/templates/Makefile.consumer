@@ -15,6 +15,10 @@ LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
 REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 DEFAULT_BRANCH ?= master
 
+# Go module cache override. If set, it is passed to the linter container.
+# The common linter image defaults to /tmp/lint/.go/pkg/mod.
+GOMODCACHE ?=
+
 # Optional: shell globs relative to the repository root that point to skill
 # bundles or individual skills. When set, `make lint` also runs skillcheck.
 # Example: SKILLCHECK_PATTERNS ?= ".opencode/skills opencode-agents"
@@ -40,6 +44,7 @@ LINTER_ENV ?= \
 	-e FILTER_REGEX_INCLUDE \
 	-e FILTER_REGEX_EXCLUDE \
 	-e GOPROXY \
+	$(if $(GOMODCACHE),-e GOMODCACHE=$(GOMODCACHE)) \
 	-e SKILLCHECK_PATTERNS=$(SKILLCHECK_PATTERNS)
 
 LINTER_VOLUMES ?= \
@@ -150,7 +155,20 @@ test-python:
 ifeq ($(CI),true)
 
 # CI mode: we are already running inside the linter container.
-.PHONY: lint lint-super-linter skill-validate lint-fix
+# The repository is mounted at REPO_ROOT (e.g. /builds/...), not /tmp/lint.
+# Link /tmp/lint to the checkout so the Dockerfile's GOMODCACHE setting
+# (/tmp/lint/.go/pkg/mod) resolves inside the repository and CI can save it.
+.PHONY: prepare-ci-workspace lint lint-super-linter skill-validate lint-fix
+
+prepare-ci-workspace:
+	@if [ ! -e /tmp/lint ]; then \
+		echo "[prepare-ci-workspace] Linking /tmp/lint -> $(REPO_ROOT)"; \
+		ln -s "$(REPO_ROOT)" /tmp/lint; \
+	fi
+
+lint: prepare-ci-workspace
+lint-super-linter: prepare-ci-workspace
+skill-validate: prepare-ci-workspace
 
 lint:
 	@super_linter_failed=0; skill_failed=0; \
@@ -182,6 +200,10 @@ skill-validate:
 
 lint-fix:
 	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
+
+# In CI, tests also need /tmp/lint linked before go test uses GOMODCACHE.
+test-go: prepare-ci-workspace
+test-python: prepare-ci-workspace
 
 else
 
