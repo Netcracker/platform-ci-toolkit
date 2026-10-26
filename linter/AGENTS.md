@@ -15,7 +15,7 @@ make lint                  # run the linter against the parent repository
 ## Layout
 
 - `Dockerfile`: installs `make` on top of the official Super-Linter image, copies the `skillcheck` binary from the public `ghcr.io/netcracker/skillcheck` image (pinned by digest), and copies baseline rules plus `run.sh`.
-- `run.sh`: container entry point. Copies baseline linter configs to a writable directory, overlays consumer rules from `/tmp/lint/prechecks/custom-liners/`, loads environment files, runs Super-Linter, and runs `skillcheck` when `SKILLCHECK_PATTERNS` is configured.
+- `run.sh`: container entry point. Ensures `/tmp/lint` points to the repository (linking to `CI_PROJECT_DIR` or `GITHUB_WORKSPACE` when running in CI), copies baseline linter configs to a writable directory, overlays consumer rules from `/tmp/lint/prechecks/custom-liners/`, loads environment files, runs Super-Linter, and runs `skillcheck` when `SKILLCHECK_PATTERNS` is configured.
 - `super-linter.env`: baseline environment for Super-Linter. Disables languages that are not commonly used; Go is left enabled so Super-Linter runs `GO` / `GO_MODULES`.
 - `prechecks/base-linters/`: default linter rule files.
 - `templates/Makefile.consumer`: full standalone consumer Makefile. Copy it into consumer repositories. It provides `verify`, `test`, `test-go`, and `test-python` targets. `lint` delegates to `lint-super-linter` and `skill-validate`; `verify` runs lint and tests; `test-go` auto-detects Go modules and applies `FILTER` to both linting and testing; `test-go` and `test-python` skip when no relevant files changed against `DEFAULT_BRANCH`.

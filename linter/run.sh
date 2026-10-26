@@ -3,6 +3,22 @@ set -euo pipefail
 
 echo "[platform-ci-toolkit] Starting common linter run.sh"
 
+# CI runners (GitLab, GitHub Actions) check out the repository to a path like
+# /builds/... or /__w/... rather than /tmp/lint. Link the expected workspace
+# path to the actual checkout so Super-Linter and skillcheck find the code.
+if [ ! -e /tmp/lint ]; then
+  repo_dir=""
+  if [ -n "${CI_PROJECT_DIR:-}" ]; then
+    repo_dir="$CI_PROJECT_DIR"
+  elif [ -n "${GITHUB_WORKSPACE:-}" ]; then
+    repo_dir="$GITHUB_WORKSPACE"
+  fi
+  if [ -n "$repo_dir" ]; then
+    echo "[platform-ci-toolkit] Linking /tmp/lint -> $repo_dir"
+    ln -s "$repo_dir" /tmp/lint
+  fi
+fi
+
 BASE_DIR="/etc/platform-ci-toolkit/base-liners"
 CUSTOM_DIR="/tmp/lint/prechecks/custom-liners"
 WORK_DIR="/tmp/platform-ci-toolkit/base-liners"

@@ -184,6 +184,7 @@ Key points:
 - The entry point must be disabled with `entrypoint: [""]` (GitLab CI) or `--entrypoint=""` (other runners).
 - `CI=true` is set automatically by GitLab runners; the consumer Makefile uses it to select the CI branch.
 - `RUN_LOCAL=true` is required because Super-Linter is not running inside GitHub Actions.
+- The common linter expects the repository at `/tmp/lint`. `run.sh` automatically links `/tmp/lint` to `CI_PROJECT_DIR` (GitLab) or `GITHUB_WORKSPACE` (GitHub Actions) when the expected path is missing.
 
 Example `.gitlab-ci.yml` jobs:
 
@@ -297,6 +298,10 @@ Additional Super-Linter variables can be set via `prechecks/custom-liners/super-
 ---
 
 ## Troubleshooting
+
+### `The workspace (/tmp/lint) is not a directory!`
+
+Super-Linter expects the repository at `/tmp/lint`. The consumer Makefile mounts the repo there for local runs; in CI, `run.sh` links `/tmp/lint` to `CI_PROJECT_DIR` (GitLab) or `GITHUB_WORKSPACE` (GitHub Actions) automatically. If you see this error in CI, make sure the job uses a current common-linter image that includes the auto-link behavior.
 
 ### `make lint` times out on multi-module repositories
 
