@@ -26,10 +26,10 @@ From a consumer repository that contains the consumer `Makefile`:
 make lint                                   # Run Super-Linter + skill validation (when SKILLCHECK_PATTERNS is set)
 make lint-super-linter                      # Run Super-Linter only
 make skill-validate                         # Run skillcheck only (skips when SKILLCHECK_PATTERNS is empty)
-make lint FILTER=<regex>                    # Run lint on a filtered set of files
+make lint FILTER_REGEX_INCLUDE=<regex>      # Run lint on a filtered set of files
 make lint-fix                               # Run Super-Linter with auto-fix enabled
 make verify                                 # Run lint and tests
-make verify FILTER=<regex>                  # Run lint and tests on a filtered set of files/modules
+make verify FILTER_REGEX_INCLUDE=<regex>    # Run lint on a filtered set of files; tests run for the changed language
 make test                                   # Run Go and Python tests (host or dedicated CI image, not the linter container)
 make test-go                                # Auto-detect Go modules and run go test ./... where tests exist
 make test-python                            # Run Python tests (requires PY_BUILD)

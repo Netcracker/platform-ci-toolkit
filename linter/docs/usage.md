@@ -32,7 +32,7 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 
 | Target | Purpose |
 | --- | --- |
-| `make lint` | Run Super-Linter and skill validation (when `SKILLCHECK_PATTERNS` is set). Set `FILTER=<regex>` to lint only matching files. |
+| `make lint` | Run Super-Linter and skill validation (when `SKILLCHECK_PATTERNS` is set). Set `FILTER_REGEX_INCLUDE=<regex>` to lint only matching files. |
 | `make lint-super-linter` | Run Super-Linter only. |
 | `make skill-validate` | Run `skillcheck` only (skips if `SKILLCHECK_PATTERNS` is empty). |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
@@ -52,10 +52,10 @@ Super-Linter compares `HEAD` against `DEFAULT_BRANCH` (default `master`) and lin
 
 ### Run on a subset of files
 
-For repositories with multiple Go modules, linting the whole repo can be slow or time out. Set `FILTER` to lint a single module or directory:
+For repositories with multiple Go modules, linting the whole repo can be slow or time out. Set `FILTER_REGEX_INCLUDE` to lint a single module or directory:
 
 ```bash
-make lint FILTER=services/backuper-service/.*
+make lint FILTER_REGEX_INCLUDE=services/backuper-service/.*
 ```
 
 This still runs the **full** Super-Linter suite (Markdown, YAML, Dockerfile, Go, Python, etc.), but only against files matching the regex.
@@ -115,23 +115,21 @@ make test-go     # Auto-detect Go modules and run go test ./... where tests exis
 make test-python # Placeholder; override in the consumer Makefile
 ```
 
-`make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` for every module that has tests. By default, `test-go` compares the working tree against `DEFAULT_BRANCH` (`master`) using `git diff --name-only DEFAULT_BRANCH --`, so it includes both committed branch changes and uncommitted working-tree changes. If no `.go`, `go.mod`, or `go.sum` files changed, the target prints a skip message and exits successfully. Otherwise it runs tests in every detected module (subject to `FILTER`).
+`make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` for every module that has tests. By default, `test-go` compares the working tree against `DEFAULT_BRANCH` (`master`) using `git diff --name-only DEFAULT_BRANCH --`, so it includes both committed branch changes and uncommitted working-tree changes. If no `.go`, `go.mod`, or `.sum` files changed, the target prints a skip message and exits successfully. Otherwise it runs tests in every detected module.
 
-If `FILTER` is set, only modules whose path matches the regex are tested. For example:
+Set `FILTER_REGEX_INCLUDE` directly when you need to narrow the lint scope. It does not affect `test-go` or `test-python`; if any matching-language files changed, all tests for that language run. Quote the value so the shell preserves the regex.
 
-```bash
-make verify FILTER=services/backuper-service/.*
-```
-
-This runs lint and tests only for `services/backuper-service` and its subpackages.
-
-To target multiple folders, use a regex alternation:
+To lint a single module:
 
 ```bash
-make verify FILTER='services/(backuper-service|trimmer-velero)/.*'
+make lint FILTER_REGEX_INCLUDE=services/backuper-service/.*
 ```
 
-`FILTER` is passed directly to Super-Linter as `FILTER_REGEX_INCLUDE` and is also used by `test-go` to select Go modules. Quote the value so the shell preserves the regex.
+To target multiple folders with lint, use a regex alternation:
+
+```bash
+make lint FILTER_REGEX_INCLUDE='services/(backuper-service|trimmer-velero)/.*'
+```
 
 `GO_TEST_MODULES` can be set explicitly to override auto-detection:
 
@@ -220,6 +218,9 @@ tests:
     DEFAULT_BRANCH: "master"
     # Set GOPROXY as a CI/CD or group variable if the default public proxy
     # is unreachable or you need a private module proxy.
+    # If Python tests need a private PyPI proxy, place a pip.conf in the repo
+    # root and point PIP_CONFIG_FILE at it.
+    PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"
   cache:
     - key: "go-mod-cache-$CI_PROJECT_NAME"
       paths:
@@ -230,6 +231,8 @@ tests:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
     - make test
 ```
+
+If Python tests download packages from a private PyPI index, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the test job. The path can be changed by the consumer if needed.
 
 For private Go modules hosted on an internal Git server, configure GitLab authentication before linting:
 
@@ -308,13 +311,15 @@ The consumer Makefile forwards the following variables into the linter container
 | `RUN_LOCAL` | Must be `true` when not running inside GitHub Actions. |
 | `DEFAULT_BRANCH` | Branch Super-Linter compares against when `VALIDATE_ALL_CODEBASE=false`. |
 | `VALIDATE_ALL_CODEBASE` | `false` lints changed files only; `true` lints everything. |
-| `FILTER_REGEX_INCLUDE` | Regex for files to include (set via `FILTER`). |
+| `FILTER_REGEX_INCLUDE` | Regex for files to include. Set directly, e.g. `make lint FILTER_REGEX_INCLUDE=...`. |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
 | `GOPROXY` | Go module proxy. Set this in CI when the default public proxy is unreachable or for private modules. |
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod` so CI systems can cache it inside the repository. |
 | `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Empty (default) disables skill validation. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.
+
+For Python tests, `make test` reads `PIP_CONFIG_FILE` when it runs `pip install`. If your tests need a private PyPI proxy, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the CI test job. This is not forwarded into the linter container because it is only used by the test target.
 
 > **Go modules and private repositories:** `run.sh` prints a warning at the start of the lint run if it finds `go.mod` files and `GOPROXY` is not set. This is a heads-up that `GO_MODULES` may fail when downloading private dependencies. Set `GOPROXY` or configure Git authentication to avoid the failure.
 
@@ -328,10 +333,10 @@ Super-Linter expects the repository at `/tmp/lint`. The consumer Makefile mounts
 
 ### `make lint` times out on multi-module repositories
 
-Set `FILTER` to lint one module at a time:
+Set `FILTER_REGEX_INCLUDE` to lint one module at a time:
 
 ```bash
-make lint FILTER=services/backuper-service/.*
+make lint FILTER_REGEX_INCLUDE=services/backuper-service/.*
 ```
 
 ### Private Go modules fail to download
