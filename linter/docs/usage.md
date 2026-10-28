@@ -37,6 +37,7 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 | `make skill-validate` | Run `skillcheck` only (skips if `SKILLCHECK_PATTERNS` is empty). |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
 | `make verify` | Run lint followed by tests. This is the target CI should call when a single job is preferred. |
+| `make test-java` | Run Maven tests in every detected module when Java/XML files changed against `DEFAULT_BRANCH`. Skips when no `pom.xml` is found. |
 
 ### Consumer Makefile setup
 
@@ -110,9 +111,10 @@ The consumer Makefile template includes test targets. Locally, `make verify` run
 
 ```bash
 make verify      # Run lint and tests
-make test        # Run test-go and test-python
+make test        # Run test-go, test-python, and test-java
 make test-go     # Auto-detect Go modules and run go test ./... where tests exist
 make test-python # Placeholder; override in the consumer Makefile
+make test-java   # Auto-detect Maven modules and run mvn test when Java/XML changed
 ```
 
 `make test-go` auto-detects Go modules by finding `go.mod` files (excluding `vendor/`), checks whether each module contains any `*_test.go` files, and runs `go test ./...` for every module that has tests. By default, `test-go` compares the working tree against `DEFAULT_BRANCH` (`master`) using `git diff --name-only DEFAULT_BRANCH --`, so it includes both committed branch changes and uncommitted working-tree changes. If no `.go`, `go.mod`, or `.sum` files changed, the target prints a skip message and exits successfully. Otherwise it runs tests in every detected module.
@@ -166,7 +168,9 @@ When `PY_BUILD` is set, `test-python` performs these steps:
    PYTHON_TEST_CMD := $(PYTHON) -m pytest -q
    ```
 
-CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and includes the Go and Python runtimes used by `go test` and the Python test command; if your tests need extra runtime services, override the test targets in the consumer Makefile.
+`make test-java` auto-detects Maven modules by finding `pom.xml` files (excluding `*/target/*`), checks whether any `.java` or `.xml` files changed against `DEFAULT_BRANCH`, and runs `mvn test` (override with `JAVA_BUILD`) in every detected module. If no `pom.xml` is found or no Java/XML files changed, the target prints a skip message and exits successfully. The common linter image does not include Maven or a JDK, so Java tests need a Java-enabled image or a consumer override that installs Maven before invoking `make test-java`.
+
+CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and includes the Go and Python runtimes used by `go test` and the Python test command; if your tests need extra runtime services (for example a JDK and Maven for Java tests), override the test targets or use an image that provides them.
 
 ---
 
@@ -221,15 +225,38 @@ tests:
     # If Python tests need a private PyPI proxy, place a pip.conf in the repo
     # root and point PIP_CONFIG_FILE at it.
     PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
   cache:
     - key: "go-mod-cache-$CI_PROJECT_NAME"
       paths:
         - .go/pkg/mod
+    - key: "pip-cache-$CI_PROJECT_NAME"
+      paths:
+        - .pip-cache
+    - key: "maven-cache-$CI_PROJECT_NAME"
+      paths:
+        - .m2/repository
   script:
     # Allow the Go toolchain to fetch private git.netcracker.com modules.
     # CI_JOB_TOKEN is provided automatically by GitLab runners.
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
     - make test
+
+java-tests:
+  stage: lint
+  image:
+    name: maven:3.9-eclipse-temurin-17
+    entrypoint: [""]
+  variables:
+    DEFAULT_BRANCH: "master"
+  rules:
+    - changes:
+        - "**/*.java"
+        - "**/pom.xml"
+  script:
+    - git fetch origin ${DEFAULT_BRANCH} --depth=1
+    - make test-java
 ```
 
 If Python tests download packages from a private PyPI index, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the test job. The path can be changed by the consumer if needed.
@@ -244,7 +271,7 @@ For private Go modules hosted on an internal Git server, configure GitLab authen
 
 ### GitHub Actions
 
-Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel:
+Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel; add a Java-specific job if the repository contains Maven modules:
 
 ```yaml
 jobs:
@@ -283,6 +310,20 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      - name: Cache Python packages
+        uses: actions/cache@v4
+        with:
+          path: .pip-cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: .m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
       - name: Configure Git authentication for private Go modules
         run: |
           git config --global url."https://token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
@@ -292,6 +333,22 @@ jobs:
           DEFAULT_BRANCH: "master"
           # Set GOPROXY if the default public proxy is unreachable or you need a private module proxy.
           GOPROXY: ${{ vars.GOPROXY }}
+          PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
+          MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/.m2/repository"
+
+  java-tests:
+    runs-on: ubuntu-latest
+    if: hashFiles('**/pom.xml') != ''
+    container:
+      image: maven:3.9-eclipse-temurin-17
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Java tests
+        run: make test-java
+        env:
+          DEFAULT_BRANCH: "master"
 ```
 
 For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
@@ -315,6 +372,8 @@ The consumer Makefile forwards the following variables into the linter container
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
 | `GOPROXY` | Go module proxy. Set this in CI when the default public proxy is unreachable or for private modules. |
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod` so CI systems can cache it inside the repository. |
+| `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
+| `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
 | `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Empty (default) disables skill validation. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.

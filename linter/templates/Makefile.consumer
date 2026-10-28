@@ -74,7 +74,14 @@ PY_BUILD ?=
 # Default Python test command. Override to use a different runner or arguments.
 PYTHON_TEST_CMD ?= $(PYTHON) -m pytest
 
-.PHONY: verify test test-go test-python
+# Java build/test command. Override if your repo uses the Maven wrapper
+# (`./mvnw`) or different goals such as `verify`.
+JAVA_BUILD ?= mvn -q test
+# Auto-detect Maven modules by finding pom.xml files. Override with a list of
+# directories if auto-detection is too broad.
+JAVA_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name pom.xml -not -path '*/target/*' -exec dirname {} \;)
+
+.PHONY: verify test test-go test-python test-java
 
 verify:
 	@lint_failed=0; test_failed=0; \
@@ -90,7 +97,22 @@ verify:
 	fi; \
 	echo "[verify] SUCCESS"
 
-test: test-go test-python
+test:
+	@go_failed=0; py_failed=0; java_failed=0; \
+	echo "=== Running Go tests ==="; \
+	$(MAKE) --no-print-directory test-go || go_failed=1; \
+	echo ""; \
+	echo "=== Running Python tests ==="; \
+	$(MAKE) --no-print-directory test-python || py_failed=1; \
+	echo ""; \
+	echo "=== Running Java tests ==="; \
+	$(MAKE) --no-print-directory test-java || java_failed=1; \
+	echo ""; \
+	if [ "$$go_failed" -eq 1 ] || [ "$$py_failed" -eq 1 ] || [ "$$java_failed" -eq 1 ]; then \
+		echo "[test] FAILED"; \
+		exit 1; \
+	fi; \
+	echo "[test] SUCCESS"
 
 test-go:
 	@repo_root="$(REPO_ROOT)"; \
@@ -162,6 +184,35 @@ test-python:
 	echo "[test-python] Running: $(PYTHON_TEST_CMD)"; \
 	$(PYTHON_TEST_CMD); test_rc=$$?; if [ $$test_rc -eq 5 ]; then echo "[test-python] pytest exit code 5 (no tests collected) treated as success"; test_rc=0; fi; exit $$test_rc
 
+test-java:
+	@repo_root="$(REPO_ROOT)"; \
+	repo_root="$${repo_root%/}"; \
+	base_branch="$(DEFAULT_BRANCH)"; \
+	base_ref="$$base_branch"; \
+	if ! git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
+		base_ref="origin/$$base_branch"; \
+	fi; \
+	if git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
+		if ! git -C "$$repo_root" diff --name-only "$$base_ref" -- | grep -Eq '\.(java|xml)$$'; then \
+			echo "[test-java] No Java or Maven files changed against $$base_ref; skipping"; \
+			exit 0; \
+		fi; \
+		echo "[test-java] Java or Maven files changed against $$base_ref"; \
+	else \
+		echo "[test-java] Default branch $$base_branch (or origin/$$base_branch) not found; running all Java tests"; \
+	fi; \
+	modules="$(JAVA_TEST_MODULES)"; \
+	if [ -z "$$modules" ]; then \
+		echo "[test-java] No Maven modules found"; \
+		exit 0; \
+	fi; \
+	echo "[test-java] Detected modules: $$modules"; \
+	for mod in $$modules; do \
+		rel_mod="$${mod#$$repo_root/}"; \
+		echo "=== Testing $$rel_mod ==="; \
+		(cd "$$mod" && $(JAVA_BUILD)); \
+	done
+
 ifeq ($(CI),true)
 
 # CI mode: we are already running inside the linter container.
@@ -210,6 +261,7 @@ lint-fix:
 # In CI, tests also need /tmp/lint linked before go test uses GOMODCACHE.
 test-go: prepare-ci-workspace
 test-python: prepare-ci-workspace
+test-java: prepare-ci-workspace
 
 else
 
