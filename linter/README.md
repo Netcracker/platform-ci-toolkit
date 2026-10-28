@@ -30,9 +30,9 @@ make lint FILTER_REGEX_INCLUDE=<regex>      # Run lint on a filtered set of file
 make lint-fix                               # Run Super-Linter with auto-fix enabled
 make verify                                 # Run lint and tests
 make verify FILTER_REGEX_INCLUDE=<regex>    # Run lint on a filtered set of files; tests run for the changed language
-make test                                   # Run Go and Python tests (host or dedicated CI image, not the linter container)
+make test                                   # Run Go and Python tests (locally on the host; in CI inside the job/container image)
 make test-go                                # Auto-detect Go modules and run go test ./... where tests exist
-make test-python                            # Run Python tests (requires PY_BUILD)
+make test-python                            # Run Python tests (skipped if PY_BUILD is not set or no .py files changed)
 ```
 
 For full usage instructions, including CI and GitHub Actions examples, see `docs/usage.md`.
