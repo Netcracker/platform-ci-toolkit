@@ -152,7 +152,7 @@ test-python:
 	echo "[test-python] Running PY_BUILD: $(PY_BUILD)"; \
 	py_build_cmd="$(PY_BUILD)"; \
 	if [ -n "$$py_build_cmd" ]; then \
-		$$py_build_cmd; py_build_rc=$$?; \
+		eval "$$py_build_cmd"; py_build_rc=$$?; \
 	else \
 		py_build_rc=0; \
 	fi; \
