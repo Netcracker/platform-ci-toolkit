@@ -243,20 +243,6 @@ tests:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
     - make test
 
-java-tests:
-  stage: lint
-  image:
-    name: maven:3.9-eclipse-temurin-17
-    entrypoint: [""]
-  variables:
-    DEFAULT_BRANCH: "master"
-  rules:
-    - changes:
-        - "**/*.java"
-        - "**/pom.xml"
-  script:
-    - git fetch origin ${DEFAULT_BRANCH} --depth=1
-    - make test-java
 ```
 
 If Python tests download packages from a private PyPI index, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the test job. The path can be changed by the consumer if needed.
@@ -271,7 +257,7 @@ For private Go modules hosted on an internal Git server, configure GitLab authen
 
 ### GitHub Actions
 
-Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel; add a Java-specific job if the repository contains Maven modules:
+Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel; `make test` inside the common linter container runs Go, Python, and Java tests together:
 
 ```yaml
 jobs:
@@ -327,6 +313,20 @@ jobs:
       - name: Configure Git authentication for private Go modules
         run: |
           git config --global url."https://token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Configure Maven settings for GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'EOF'
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${{ github.actor }}</username>
+                <password>${{ secrets.GITHUB_TOKEN }}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
       - name: Run tests
         run: make test
         env:
@@ -335,21 +335,9 @@ jobs:
           GOPROXY: ${{ vars.GOPROXY }}
           PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
           MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/.m2/repository"
-
-  java-tests:
-    runs-on: ubuntu-latest
-    if: hashFiles('**/pom.xml') != ''
-    container:
-      image: maven:3.9-eclipse-temurin-17
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Run Java tests
-        run: make test-java
-        env:
-          DEFAULT_BRANCH: "master"
 ```
+
+The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`.
 
 For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
 
