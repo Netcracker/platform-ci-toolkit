@@ -14,14 +14,15 @@ LABEL org.opencontainers.image.description="Common linter image based on Super-L
 # is unreachable or when private modules are used.
 ENV GOMODCACHE="/tmp/lint/.go/pkg/mod"
 
-# Install make so that consumer Makefiles can be invoked both locally and in CI.
+# Install make, Maven and OpenJDK 25 so the consumer Makefile can run Java tests
+# inside the same container used for linting.
 USER root
 RUN if command -v apk >/dev/null 2>&1; then \
-        apk add --no-cache make; \
+        apk add --no-cache make openjdk25-jdk maven; \
     elif command -v apt-get >/dev/null 2>&1; then \
-        apt-get update && apt-get install -y --no-install-recommends make && rm -rf /var/lib/apt/lists/*; \
+        apt-get update && apt-get install -y --no-install-recommends make maven && rm -rf /var/lib/apt/lists/*; \
     else \
-        echo "No supported package manager found; please install make manually" && exit 1; \
+        echo "No supported package manager found; please install make, Maven and a JDK manually" && exit 1; \
     fi
 
 COPY --from=skillcheck /usr/local/bin/skillcheck /usr/local/bin/skillcheck

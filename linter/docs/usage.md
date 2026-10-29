@@ -168,9 +168,9 @@ When `PY_BUILD` is set, `test-python` performs these steps:
    PYTHON_TEST_CMD := $(PYTHON) -m pytest -q
    ```
 
-`make test-java` auto-detects Maven modules by finding `pom.xml` files (excluding `*/target/*`), checks whether any `.java` or `.xml` files changed against `DEFAULT_BRANCH`, and runs `mvn test` (override with `JAVA_BUILD`) in every detected module. If no `pom.xml` is found or no Java/XML files changed, the target prints a skip message and exits successfully. The common linter image does not include Maven or a JDK, so Java tests need a Java-enabled image or a consumer override that installs Maven before invoking `make test-java`.
+`make test-java` auto-detects Maven modules by finding `pom.xml` files (excluding `*/target/*`), checks whether any `.java` or `.xml` files changed against `DEFAULT_BRANCH`, and runs `mvn test` (override with `JAVA_BUILD`) in every detected module. If no `pom.xml` is found or no Java/XML files changed, the target prints a skip message and exits successfully. The common linter image includes Maven and OpenJDK 25, so `make test-java` works out of the box in CI. If a project needs a different JDK version, override the test job to use a Java-enabled image or set `JAVA_BUILD` accordingly.
 
-CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and includes the Go and Python runtimes used by `go test` and the Python test command; if your tests need extra runtime services (for example a JDK and Maven for Java tests), override the test targets or use an image that provides them.
+CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and includes the Go, Python and Java runtimes used by `go test`, the Python test command, and `mvn test`.
 
 ---
 
