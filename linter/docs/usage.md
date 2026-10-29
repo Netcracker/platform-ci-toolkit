@@ -44,29 +44,51 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 
 ### Consumer Makefile setup
 
-There are two ways to consume the template.
+There are two ways to consume the template. Prefer the include pattern so the shared recipe stays in one file you can refresh from upstream.
 
-#### Copy the template
+#### Include a vendored copy (recommended)
 
-Copy `templates/Makefile` from `platform-ci-toolkit/linter` into the consumer repository as `Makefile`. Adjust the variables at the top of the file if needed.
-
-#### Include the template
-
-Keep a thin consumer `Makefile` that sets any required overrides and then includes the shared template. This avoids duplicating the template content and is useful when several repositories share the same platform-ci-toolkit checkout locally.
+1. Copy `templates/Makefile` into the consumer repository as `Makefile.linter`.
+2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `Makefile.linter`.
 
 Example wrapper:
 
 ```make
-# cloud-backuper Makefile
-LINTER_IMAGE ?= artifactorycn.netcracker.com:17152/netcracker/linter
+# Consumer Makefile (overrides only)
+REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= common_linter_integration
-SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
+DEFAULT_BRANCH ?= main
+
+# Override only when this repo needs extra skill paths or a different layout.
+# SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills dbaas-operator/agent-packages/*/.apm/skills
+# export SKILLCHECK_PATTERNS
+
+PYTHON ?= python3
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
-include /path/to/platform-ci-toolkit/linter/templates/Makefile
+# Evaluate against this checkout before Makefile.linter can overwrite REPO_ROOT.
+GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -exec dirname {} \;)
+JAVA_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name pom.xml -not -path '*/target/*' -exec dirname {} \;)
+
+include $(REPO_ROOT)Makefile.linter
+
+# Point REPO_ROOT back at this repository when Makefile.linter used lastword.
+REPO_ROOT := $(dir $(abspath $(firstword $(MAKEFILE_LIST))))
 ```
 
-For CI, ensure the included template is available at the include path (for example, by checking out `platform-ci-toolkit` as a sibling repository, or by downloading the template before `make` is invoked).
+Refresh the vendored file when the upstream template changes:
+
+```bash
+make sync-linter-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-templates/Makefile>
+```
+
+`sync-linter-makefile` writes `Makefile.linter` at the repository root.
+
+#### Copy the template as the main Makefile
+
+Copy `templates/Makefile` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `Makefile.linter`.
 
 ### Run on changed files
 
@@ -88,24 +110,33 @@ This still runs the **full** Super-Linter suite (Markdown, YAML, Dockerfile, Go,
 
 ### Skill validation
 
-`make lint` also runs `make skill-validate` when `SKILLCHECK_PATTERNS` is set in the consumer `Makefile` or environment. `make skill-validate` invokes `skillcheck` directly and can be run on its own.
+`make lint` also runs `make skill-validate` when `SKILLCHECK_PATTERNS` is non-empty. `make skill-validate` invokes `skillcheck` directly and can be run on its own.
 
-Patterns are shell globs relative to the repository root that point to skill bundles or individual skill folders. Directories that do not contain a `SKILL.md` file (or a direct subdirectory with one) are silently ignored, so generic patterns do not fail the lint job when no skills are present.
-
-Example in a consumer `Makefile`:
+The shared template defaults to:
 
 ```make
-SKILLCHECK_PATTERNS ?= .opencode/skills
+SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
 ```
 
-In CI, set the same variable in the job variables:
+Patterns are shell globs relative to the repository root. They point to skill bundles or individual skill folders. Directories that do not contain a `SKILL.md` file (or a direct subdirectory with one) are silently ignored, so a pattern that matches no skills does not fail the lint job.
 
-```yaml
-  variables:
-    SKILLCHECK_PATTERNS: ".opencode/skills"
+Override in the consumer `Makefile` only when this repository needs a different path list. Do not set `SKILLCHECK_PATTERNS` again in the GitLab job variables or GitHub Actions `env` block. A CI environment value wins over Makefile `?=`, so a workflow override can drop paths that the Makefile already defines.
+
+Example override in the consumer `Makefile` (not in the workflow):
+
+```make
+SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills dbaas-operator/agent-packages/*/.apm/skills
+export SKILLCHECK_PATTERNS
 ```
 
-If `SKILLCHECK_PATTERNS` is empty, `make skill-validate` prints a skip message and exits successfully, so `make lint` still runs Super-Linter only.
+To skip skill validation, set an empty value in the consumer `Makefile`:
+
+```make
+SKILLCHECK_PATTERNS ?=
+export SKILLCHECK_PATTERNS
+```
+
+Then `make skill-validate` prints a skip message and exits successfully, so `make lint` still runs Super-Linter only.
 
 ### Run with auto-fix
 
@@ -203,53 +234,24 @@ CI pipelines can run lint and tests as two parallel jobs (shown below) or call `
 
 ### GitLab CI
 
-The common linter image is designed to run inside CI jobs. The CI runner disables the image entry point and executes `make lint` or `make test` (or `make verify`) as the container command.
+Define one shared `.pre-check-base` job and reuse it by setting `TARGET` to `lint` or `test` (the consumer Makefile targets). Do not duplicate the image, cache, and script blocks for each job.
 
-Key points:
-
-- The container image is `ghcr.io/netcracker/linter:latest`.
-- The entry point must be disabled with `entrypoint: [""]` (GitLab CI) or `--entrypoint=""` (other runners).
-- `CI=true` is set automatically by GitLab runners; the consumer Makefile uses it to select the CI branch.
-- `RUN_LOCAL=true` is required because Super-Linter is not running inside GitHub Actions.
-- The common linter expects the repository at `/tmp/lint`. `run.sh` automatically links `/tmp/lint` to `CI_PROJECT_DIR` (GitLab) or `GITHUB_WORKSPACE` (GitHub Actions) when the expected path is missing.
-- The image sets `GOMODCACHE=/tmp/lint/.go/pkg/mod` so Go modules are cached inside the repository and can be saved/restored by CI. `GOPROXY` is not hardcoded in the image; set it in your CI variables if the default public proxy is unreachable or you need an internal proxy.
-
-Example `.gitlab-ci.yml` jobs:
+Shared base (keep this in a template file such as `templates/pre-check-common.yml`, or paste it into `.gitlab-ci.yml`):
 
 ```yaml
-lint:
-  stage: lint
+.pre-check-base:
+  stage: linter
   image:
-    name: ghcr.io/netcracker/linter:latest
-    entrypoint: [""]
-  variables:
-    RUN_LOCAL: "true"
-    DEFAULT_BRANCH: "master"
-    VALIDATE_ALL_CODEBASE: "false"
-    # Set GOPROXY as a CI/CD or group variable if the default public proxy
-    # is unreachable or you need a private module proxy.
-  cache:
-    - key: "go-mod-cache-$CI_PROJECT_NAME-lint"
-      paths:
-        - .go/pkg/mod
-  script:
-    # Allow the Go toolchain to fetch private git.netcracker.com modules.
-    # CI_JOB_TOKEN is provided automatically by GitLab runners.
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
-    - make lint
-
-tests:
-  stage: lint
-  image:
-    name: ghcr.io/netcracker/linter:latest
+    name: "artifactorycn.netcracker.com:17152/netcracker/linter:common_linter_integration"
+    # The image entrypoint is "/usr/local/bin/run.sh"; GitLab needs a shell instead for tests.
     entrypoint: [""]
   variables:
     DEFAULT_BRANCH: "master"
-    # Set GOPROXY as a CI/CD or group variable if the default public proxy
-    # is unreachable or you need a private module proxy.
-    # If Python tests need a private PyPI proxy, place a pip.conf in the repo
-    # root and point PIP_CONFIG_FILE at it.
+    TARGET: ""
     PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"
+    GOPROXY: "https://artifactorycn.netcracker.com/pd.sandbox-staging.go.group,https://artifactorycn.netcracker.com/pd.saas.golang.dev,https://artifactorycn.netcracker.com/pd.saas-release.golang.group"
+    # RUN_LOCAL is consumed by Super-Linter inside the common linter image.
+    RUN_LOCAL: "true"
     PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
     MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
   cache:
@@ -263,21 +265,78 @@ tests:
       paths:
         - .m2/repository
   script:
-    # Allow the Go toolchain to fetch private git.netcracker.com modules.
-    # CI_JOB_TOKEN is provided automatically by GitLab runners.
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.netcracker.com/".insteadOf "https://git.netcracker.com/"
-    - make test
-
+    # Super-Linter and the test targets need the default branch available for
+    # change-detection. GitLab CI checkout does not fetch it by default.
+    - git fetch origin ${DEFAULT_BRANCH} --depth=1
+    - make ${TARGET}
+  rules:
+    # Skip branch/tag/schedule pushes and automation MRs.
+    - if: '$CI_PIPELINE_SOURCE != "merge_request_event"'
+      when: never
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^renovate-master/'
+      when: never
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^fix\/skill-docs-sync/'
+      when: never
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^chore\/update-apm-packages/'
+      when: never
+    - when: on_success
 ```
 
-If Python tests download packages from a private PyPI index, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the test job. The path can be changed by the consumer if needed.
-
-For private Go modules hosted on an internal Git server, configure GitLab authentication before linting:
+Import the template from the consumer `.gitlab-ci.yml`:
 
 ```yaml
-  script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.<private-git-host>.com/".insteadOf "https://git.<private-git-host>.com/"
-    - make verify
+include:
+  - project: 'PROD.Platform.Databases/ci-tools'
+    ref: <ci-tools-ref>
+    file: '/templates/pre-check-common.yml'
+```
+
+Or, when the template lives in the same repository:
+
+```yaml
+include:
+  - local: '/templates/pre-check-common.yml'
+```
+
+Then instantiate the base twice — set `TARGET` and any job-specific overrides only:
+
+```yaml
+Super Linter:
+  tags:
+    - OL7
+  extends: [.pre-check-base]
+  variables:
+    TARGET: lint
+    # VALIDATE_ALL_CODEBASE is defined in prechecks/custom-liners/super-linter.env.
+    # DEFAULT_BRANCH and RUN_LOCAL are inherited from .pre-check-base.
+
+Unit Tests:
+  tags:
+    - OL7
+  extends: [.pre-check-base]
+  variables:
+    TARGET: test
+    PIP_CONFIG_FILE: "$CI_PROJECT_DIR/tests/robot/pip.conf"
+    # DEFAULT_BRANCH is inherited from .pre-check-base.
+```
+
+Key points:
+
+- `TARGET` must be a Makefile target (`lint`, `test`, or `verify`).
+- The entry point must be disabled with `entrypoint: [""]` so the job can run `make`.
+- `CI=true` is set automatically by GitLab runners; the consumer Makefile uses it to select the CI branch.
+- `RUN_LOCAL=true` is required because Super-Linter is not running inside GitHub Actions.
+- The common linter expects the repository at `/tmp/lint`. `run.sh` links `/tmp/lint` to `CI_PROJECT_DIR` when needed.
+- The image sets `GOMODCACHE=/tmp/lint/.go/pkg/mod` so CI can cache Go modules inside the repository.
+- Fetch `${DEFAULT_BRANCH}` before `make` so Super-Linter and the test skip logic can compare against it.
+
+If Python tests download packages from a private PyPI index, place a `pip.conf` in the repository and set `PIP_CONFIG_FILE` on the unit-test job (or on `.pre-check-base`).
+
+For private Go modules on an internal Git server, add authentication before `make` in `.pre-check-base` `script`, or in a `before_script` on the extending jobs:
+
+```yaml
+before_script:
+  - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.<private-git-host>.com/".insteadOf "https://git.<private-git-host>.com/"
 ```
 
 ### GitHub Actions
@@ -387,7 +446,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod` so CI systems can cache it inside the repository. |
 | `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
-| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Empty (default) disables skill validation. |
+| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (or `Makefile.linter`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.
 

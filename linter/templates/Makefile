@@ -25,7 +25,7 @@ GOMODCACHE ?=
 # Optional: shell globs relative to the repository root that point to skill
 # bundles or individual skills. When set, `make lint` also runs skillcheck.
 # Example: SKILLCHECK_PATTERNS ?= ".opencode/skills opencode-agents"
-SKILLCHECK_PATTERNS ?=
+SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
 export SKILLCHECK_PATTERNS
 
 # Optional: synchronize this Makefile from the upstream template.
