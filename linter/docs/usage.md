@@ -2,7 +2,7 @@
 
 This document explains how to use the `platform-ci-toolkit` common linter locally, in CI pipelines, and in GitHub Actions workflows.
 
-The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories copy the `templates/Makefile.consumer` template so the same targets work locally and in CI.
+The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories either copy `templates/Makefile` as their own `Makefile`, or include it from a thin wrapper so the same targets work locally and in CI.
 
 ## Default linters
 
@@ -25,7 +25,7 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 ### Prerequisites
 
 - Docker installed and running.
-- A consumer `Makefile` based on `templates/Makefile.consumer` copied into the consumer repository.
+- A consumer `Makefile` based on `templates/Makefile` copied into the consumer repository, or a wrapper that includes the template.
 - The repository root mounted at `/tmp/lint` inside the container (handled by the Makefile).
 
 ### Makefile targets
@@ -37,11 +37,36 @@ A consumer repository can override the baseline by placing `prechecks/custom-lin
 | `make skill-validate` | Run `skillcheck` only (skips if `SKILLCHECK_PATTERNS` is empty). |
 | `make lint-fix` | Run Super-Linter with auto-fix enabled for supported languages. |
 | `make verify` | Run lint followed by tests. This is the target CI should call when a single job is preferred. |
-| `make test-java` | Run Maven tests in every detected module when Java/XML files changed against `DEFAULT_BRANCH`. Skips when no `pom.xml` is found. |
+| `make test` | Run language-specific tests together: `test-go`, `test-python`, and `test-java`. |
+| `make test-go` | Auto-detect Go modules and run `go test ./...` where tests exist. Skips when no Go files changed. |
+| `make test-python` | Run Python tests when `PY_BUILD` is set and Python files changed. Skips otherwise. |
+| `make test-java` | Auto-detect Maven modules and run `mvn test` when Java/XML files changed against `DEFAULT_BRANCH`. Skips when no `pom.xml` is found or no files changed. |
 
 ### Consumer Makefile setup
 
-Copy `templates/Makefile.consumer` from `platform-ci-toolkit/linter` into the consumer repository as `Makefile`. Adjust the variables at the top of the file if needed.
+There are two ways to consume the template.
+
+#### Copy the template
+
+Copy `templates/Makefile` from `platform-ci-toolkit/linter` into the consumer repository as `Makefile`. Adjust the variables at the top of the file if needed.
+
+#### Include the template
+
+Keep a thin consumer `Makefile` that sets any required overrides and then includes the shared template. This avoids duplicating the template content and is useful when several repositories share the same platform-ci-toolkit checkout locally.
+
+Example wrapper:
+
+```make
+# cloud-backuper Makefile
+LINTER_IMAGE ?= artifactorycn.netcracker.com:17152/netcracker/linter
+LINTER_TAG ?= common_linter_integration
+SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
+PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
+
+include /path/to/platform-ci-toolkit/linter/templates/Makefile
+```
+
+For CI, ensure the included template is available at the include path (for example, by checking out `platform-ci-toolkit` as a sibling repository, or by downloading the template before `make` is invoked).
 
 ### Run on changed files
 

@@ -37,4 +37,4 @@ make test-java                              # Auto-detect Maven modules and run 
 ```
 
 For full usage instructions, including CI and GitHub Actions examples, see `docs/usage.md`.
-See `templates/Makefile.consumer` for the consumer template, `docs/usage.md` for usage instructions, and `super-linter.env` for baseline environment variables.
+See `templates/Makefile` for the consumer template, `docs/usage.md` for usage instructions, and `super-linter.env` for baseline environment variables.

@@ -1,6 +1,6 @@
 # Consumer Makefile template for platform-ci-toolkit / Super-Linter.
-# Copy this file into a consumer repository as Makefile (or include it)
-# and adjust the variables below if needed.
+# Copy this file into a consumer repository as Makefile, or include it from a
+# consumer Makefile and adjust the variables below if needed.
 #
 # This Makefile works in two modes:
 #   - Local: it pulls the linter image and runs lint via Docker; tests run on
@@ -12,26 +12,29 @@ LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= latest
 LINTER_IMAGE_FULL := $(LINTER_IMAGE):$(LINTER_TAG)
 
-REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+# When this file is included, firstword is the consumer Makefile, so REPO_ROOT
+# resolves to the consumer repository root. When copied as the main Makefile,
+# firstword is this file, which also lives at the repository root.
+REPO_ROOT ?= $(dir $(abspath $(firstword $(MAKEFILE_LIST))))
 DEFAULT_BRANCH ?= master
 
 # Go module cache override. If set, it is passed to the linter container.
 # The common linter image defaults to /tmp/lint/.go/pkg/mod.
 GOMODCACHE ?=
 
-# Shell globs relative to the repository root that point to skill bundles or
-# individual skills. `make lint` runs skillcheck when this is non-empty.
-# Override to change the paths, or set an empty value to skip skillcheck.
-SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
+# Optional: shell globs relative to the repository root that point to skill
+# bundles or individual skills. When set, `make lint` also runs skillcheck.
+# Example: SKILLCHECK_PATTERNS ?= ".opencode/skills opencode-agents"
+SKILLCHECK_PATTERNS ?=
 export SKILLCHECK_PATTERNS
 
 # Optional: synchronize this Makefile from the upstream template.
-# Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer.
+# Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.
 sync-linter-makefile:
 ifdef PLATFORM_CI_TOOLKIT_RAW_URL
 	curl -fsSL -o $(REPO_ROOT)/Makefile.linter $(PLATFORM_CI_TOOLKIT_RAW_URL)
 else
-	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.consumer"
+	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile"
 	@exit 1
 endif
 
@@ -87,27 +90,41 @@ verify: lint test
 
 test: test-go test-python test-java
 
-test-go:
-	@echo ""; \
-	echo "=== Running Go tests ==="; \
-	repo_root="$(REPO_ROOT)"; \
-	repo_root="$${repo_root%/}"; \
-	base_branch="$(DEFAULT_BRANCH)"; \
-	base_ref="$$base_branch"; \
-	echo "[test-go] REPO_ROOT=$$repo_root"; \
-	echo "[test-go] DEFAULT_BRANCH=$$base_branch"; \
-	if ! git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
-		base_ref="origin/$$base_branch"; \
+# Shared shell setup for test-go / test-python / test-java.
+# Sets repo_root and defines check_changed_files LABEL EXT_REGEX KIND_LABEL.
+# That helper returns 0 when tests should run and 1 when the target should skip.
+define test-shell-helpers
+repo_root="$(REPO_ROOT)"; \
+repo_root="$${repo_root%/}"; \
+check_changed_files() { \
+	_label="$$1"; \
+	_pattern="$$2"; \
+	_kind="$$3"; \
+	_base_branch="$(DEFAULT_BRANCH)"; \
+	_base_ref="$$_base_branch"; \
+	if ! git -C "$$repo_root" rev-parse --verify "$$_base_ref" >/dev/null 2>&1; then \
+		_base_ref="origin/$$_base_branch"; \
 	fi; \
-	if git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
-		if ! git -C "$$repo_root" diff --name-only "$$base_ref" -- | grep -Eq '\.(go|mod|sum)$$'; then \
-			echo "[test-go] No Go, go.mod, or go.sum files changed against $$base_ref; skipping"; \
-			exit 0; \
+	if git -C "$$repo_root" rev-parse --verify "$$_base_ref" >/dev/null 2>&1; then \
+		if ! git -C "$$repo_root" diff --name-only "$$_base_ref" -- | grep -Eq "$$_pattern"; then \
+			echo "[$$_label] No $$_kind files changed against $$_base_ref; skipping"; \
+			return 1; \
 		fi; \
-		echo "[test-go] Go, go.mod, or go.sum files changed against $$base_ref"; \
+		echo "[$$_label] $$_kind files changed against $$_base_ref"; \
 	else \
-		echo "[test-go] Default branch $$base_branch (or origin/$$base_branch) not found; running all Go tests"; \
+		echo "[$$_label] Default branch $$_base_branch (or origin/$$_base_branch) not found; running all $$_kind tests"; \
 	fi; \
+	return 0; \
+}
+endef
+
+test-go:
+	@$(test-shell-helpers); \
+	echo ""; \
+	echo "=== Running Go tests ==="; \
+	echo "[test-go] REPO_ROOT=$$repo_root"; \
+	echo "[test-go] DEFAULT_BRANCH=$(DEFAULT_BRANCH)"; \
+	check_changed_files test-go '\.(go|mod|sum)$$' 'Go, go.mod, or go.sum' || exit 0; \
 	modules="$(GO_TEST_MODULES)"; \
 	if [ -z "$$modules" ]; then \
 		echo "[test-go] No Go modules found"; \
@@ -125,28 +142,14 @@ test-go:
 	done
 
 test-python:
-	@echo ""; \
+	@$(test-shell-helpers); \
+	echo ""; \
 	echo "=== Running Python tests ==="; \
-	repo_root="$(REPO_ROOT)"; \
-	repo_root="$${repo_root%/}"; \
-	base_branch="$(DEFAULT_BRANCH)"; \
-	base_ref="$$base_branch"; \
 	if [ -z "$(PY_BUILD)" ]; then \
 		echo "[test-python] PY_BUILD not set; skipping"; \
 		exit 0; \
 	fi; \
-	if ! git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
-		base_ref="origin/$$base_branch"; \
-	fi; \
-	if git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
-		if ! git -C "$$repo_root" diff --name-only "$$base_ref" -- | grep -Eq '\.py$$'; then \
-			echo "[test-python] No Python files changed against $$base_ref; skipping"; \
-			exit 0; \
-		fi; \
-		echo "[test-python] Python files changed against $$base_ref"; \
-	else \
-		echo "[test-python] Default branch $$base_branch (or origin/$$base_branch) not found; running Python tests"; \
-	fi; \
+	check_changed_files test-python '\.py$$' 'Python' || exit 0; \
 	echo "[test-python] Running PY_BUILD: $(PY_BUILD)"; \
 	py_build_cmd="$(PY_BUILD)"; \
 	if [ -n "$$py_build_cmd" ]; then \
@@ -161,24 +164,10 @@ test-python:
 	$(PYTHON_TEST_CMD); test_rc=$$?; if [ $$test_rc -eq 5 ]; then echo "[test-python] pytest exit code 5 (no tests collected) treated as success"; test_rc=0; fi; exit $$test_rc
 
 test-java:
-	@echo ""; \
+	@$(test-shell-helpers); \
+	echo ""; \
 	echo "=== Running Java tests ==="; \
-	repo_root="$(REPO_ROOT)"; \
-	repo_root="$${repo_root%/}"; \
-	base_branch="$(DEFAULT_BRANCH)"; \
-	base_ref="$$base_branch"; \
-	if ! git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
-		base_ref="origin/$$base_branch"; \
-	fi; \
-	if git -C "$$repo_root" rev-parse --verify "$$base_ref" >/dev/null 2>&1; then \
-		if ! git -C "$$repo_root" diff --name-only "$$base_ref" -- | grep -Eq '\.(java|xml)$$'; then \
-			echo "[test-java] No Java or Maven files changed against $$base_ref; skipping"; \
-			exit 0; \
-		fi; \
-		echo "[test-java] Java or Maven files changed against $$base_ref"; \
-	else \
-		echo "[test-java] Default branch $$base_branch (or origin/$$base_branch) not found; running all Java tests"; \
-	fi; \
+	check_changed_files test-java '\.(java|xml)$$' 'Java or Maven' || exit 0; \
 	modules="$(JAVA_TEST_MODULES)"; \
 	if [ -z "$$modules" ]; then \
 		echo "[test-java] No Maven modules found"; \
