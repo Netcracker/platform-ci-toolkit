@@ -19,10 +19,10 @@ DEFAULT_BRANCH ?= master
 # The common linter image defaults to /tmp/lint/.go/pkg/mod.
 GOMODCACHE ?=
 
-# Optional: shell globs relative to the repository root that point to skill
-# bundles or individual skills. When set, `make lint` also runs skillcheck.
-# Example: SKILLCHECK_PATTERNS ?= ".opencode/skills opencode-agents"
-SKILLCHECK_PATTERNS ?=
+# Shell globs relative to the repository root that point to skill bundles or
+# individual skills. `make lint` runs skillcheck when this is non-empty.
+# Override to change the paths, or set an empty value to skip skillcheck.
+SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
 export SKILLCHECK_PATTERNS
 
 # Optional: synchronize this Makefile from the upstream template.
