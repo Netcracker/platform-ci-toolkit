@@ -11,12 +11,14 @@ The common linter does not enable linters explicitly. Instead, it relies on Supe
 - `super-linter.env` in this repository sets `VALIDATE_<LANGUAGE>=false` for languages such as Java, Kotlin, Terraform, XML, JavaScript, TypeScript, Ruby, PHP, etc.
 - All other Super-Linter v9 languages are auto-detected: when a changed file matches a language, its linters run automatically.
 
-For the full list of supported linters and the meaning of each `VALIDATE_*` variable, see the upstream Super-Linter documentation:
+The catalog of disabled Super-Linter checks, typically active checks, and Makefile test targets (`test-go`, `test-python`, `test-java`, skillcheck) is in [supported-checks.md](supported-checks.md).
+
+Upstream Super-Linter references:
 
 - [Supported linters](https://github.com/super-linter/super-linter#supported-linters)
 - [Environment variables](https://github.com/super-linter/super-linter/blob/main/docs/run-linter-locally.md)
 
-A consumer repository can override the baseline by placing `prechecks/custom-liners/super-linter.env` in its own repository.
+Override `DEFAULT_BRANCH` via the Makefile, CI job variables, or `docker -e` (see below). For other Super-Linter knobs, use an optional `prechecks/custom-liners/super-linter.env` — it merges over the image baseline (only the keys you set change).
 
 ---
 
@@ -57,13 +59,13 @@ Example wrapper:
 # Consumer Makefile (overrides only). Do not edit Makefile.precheck.
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= common_linter_integration
+# Override when the repo default branch is not master (exported by Makefile.precheck).
 DEFAULT_BRANCH ?= main
 
 # Override only when this repo needs extra skill paths or a different layout.
 # SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills dbaas-operator/agent-packages/*/.apm/skills
 # export SKILLCHECK_PATTERNS
 
-PYTHON ?= python3
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
 include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))Makefile.precheck
@@ -89,7 +91,17 @@ Copy `templates/Makefile` into the consumer repository as `Makefile` and adjust 
 make lint
 ```
 
-Super-Linter compares `HEAD` against `DEFAULT_BRANCH` (default `master`) and lints only the changed files. Set `VALIDATE_ALL_CODEBASE=false` in the environment or in `super-linter.env`.
+Super-Linter compares `HEAD` against `DEFAULT_BRANCH` (default `master`) and lints only the changed files. The image baseline already sets `VALIDATE_ALL_CODEBASE=false` and `DEFAULT_BRANCH=master`.
+
+To use a different branch (no `prechecks/` file required):
+
+```bash
+make lint DEFAULT_BRANCH=main
+# or in the consumer Makefile:
+# DEFAULT_BRANCH ?= main
+```
+
+`Makefile.precheck` exports `DEFAULT_BRANCH` so CI `make lint` / `make test` pass it into `run.sh`. Override only the value in the consumer Makefile (`DEFAULT_BRANCH ?= main`); do not re-declare `export`. `run.sh` also restores a caller-set `DEFAULT_BRANCH` after loading env files so the image default does not replace it.
 
 ### Run on a subset of files
 
@@ -229,21 +241,22 @@ CI pipelines can run lint and tests as two parallel jobs (shown below) or call `
 
 Define one shared `.pre-check-base` job and reuse it by setting `TARGET` to `lint` or `test` (the consumer Makefile targets). Do not duplicate the image, cache, and script blocks for each job.
 
-Shared base (keep this in a template file such as `templates/pre-check-common.yml`, or paste it into `.gitlab-ci.yml`):
+In ci-tools, `.pre-check-base` extends the shared runner base and push/MR rules:
 
 ```yaml
 .pre-check-base:
+  extends: [.base-netcracker, .run_on_push_and_mr]
   stage: linter
   image:
     name: "artifactorycn.netcracker.com:17152/netcracker/linter:common_linter_integration"
-    # The image entrypoint is "/usr/local/bin/run.sh"; GitLab needs a shell instead for tests.
+    # Overrides .base-netcracker's $DOCKER_IMAGE. Disable the image entrypoint
+    # so the job can run `make`.
     entrypoint: [""]
   variables:
     DEFAULT_BRANCH: "master"
     TARGET: ""
     PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"
     GOPROXY: "https://artifactorycn.netcracker.com/pd.sandbox-staging.go.group,https://artifactorycn.netcracker.com/pd.saas.golang.dev,https://artifactorycn.netcracker.com/pd.saas-release.golang.group"
-    # RUN_LOCAL is consumed by Super-Linter inside the common linter image.
     RUN_LOCAL: "true"
     PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
     MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
@@ -258,38 +271,23 @@ Shared base (keep this in a template file such as `templates/pre-check-common.ym
       paths:
         - .m2/repository
   script:
-    # Super-Linter and the test targets need the default branch available for
-    # change-detection. GitLab CI checkout does not fetch it by default.
     - git fetch origin ${DEFAULT_BRANCH} --depth=1
     - make ${TARGET}
-  rules:
-    # Skip branch/tag/schedule pushes and automation MRs.
-    - if: '$CI_PIPELINE_SOURCE != "merge_request_event"'
-      when: never
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^renovate-master/'
-      when: never
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^fix\/skill-docs-sync/'
-      when: never
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^chore\/update-apm-packages/'
-      when: never
-    - when: on_success
 ```
 
-Import the template from the consumer `.gitlab-ci.yml`:
+`.base-netcracker` and `.run_on_push_and_mr` live in `templates/common.gitlab-ci.yml`. Include that file before `pre-check-common.yml`:
 
 ```yaml
 include:
   - project: 'PROD.Platform.Databases/ci-tools'
     ref: <ci-tools-ref>
+    file: '/templates/common.gitlab-ci.yml'
+  - project: 'PROD.Platform.Databases/ci-tools'
+    ref: <ci-tools-ref>
     file: '/templates/pre-check-common.yml'
 ```
 
-Or, when the template lives in the same repository:
-
-```yaml
-include:
-  - local: '/templates/pre-check-common.yml'
-```
+`.run_on_push_and_mr` runs on merge-request pipelines, pushes without an open MR, schedules, web, and parent pipelines.
 
 Then instantiate the base twice — set `TARGET` and any job-specific overrides only:
 
@@ -300,7 +298,6 @@ Super Linter:
   extends: [.pre-check-base]
   variables:
     TARGET: lint
-    # VALIDATE_ALL_CODEBASE is defined in prechecks/custom-liners/super-linter.env.
     # DEFAULT_BRANCH and RUN_LOCAL are inherited from .pre-check-base.
 
 Unit Tests:
@@ -431,7 +428,7 @@ The consumer Makefile forwards the following variables into the linter container
 | Variable | Purpose |
 | --- | --- |
 | `RUN_LOCAL` | Must be `true` when not running inside GitHub Actions. |
-| `DEFAULT_BRANCH` | Branch Super-Linter compares against when `VALIDATE_ALL_CODEBASE=false`. |
+| `DEFAULT_BRANCH` | Branch Super-Linter compares against when `VALIDATE_ALL_CODEBASE=false`. Set via Makefile, CI job variables, or `docker -e`; caller value is kept over env files. |
 | `VALIDATE_ALL_CODEBASE` | `false` lints changed files only; `true` lints everything. |
 | `FILTER_REGEX_INCLUDE` | Regex for files to include. Set directly, e.g. `make lint FILTER_REGEX_INCLUDE=...`. |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
@@ -441,7 +438,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
 | `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `Makefile.precheck`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
 
-Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.
+Optional: set other Super-Linter knobs in `prechecks/custom-liners/super-linter.env` (merges over the image baseline). Use Makefile / CI / `docker -e` for `DEFAULT_BRANCH`.
 
 For Python tests, `make test` reads `PIP_CONFIG_FILE` when it runs `pip install`. If your tests need a private PyPI proxy, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the CI test job. This is not forwarded into the linter container because it is only used by the test target.
 

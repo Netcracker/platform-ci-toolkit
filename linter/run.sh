@@ -40,6 +40,14 @@ if [ -d "$CUSTOM_DIR" ]; then
   shopt -u nullglob dotglob
 fi
 
+# Remember DEFAULT_BRANCH when the caller set it (docker -e / CI / export).
+# Env files below would otherwise overwrite it with the image default.
+_had_default_branch=0
+if [ -n "${DEFAULT_BRANCH+x}" ]; then
+  _had_default_branch=1
+  _default_branch_from_runtime="$DEFAULT_BRANCH"
+fi
+
 # Load baseline environment defaults.
 if [ -f /etc/platform-ci-toolkit/super-linter.env ]; then
   set -a
@@ -48,12 +56,16 @@ if [ -f /etc/platform-ci-toolkit/super-linter.env ]; then
   set +a
 fi
 
-# Allow consumers to override environment variables.
+# Optional consumer overrides (only keys listed in the file change; rest stay).
 if [ -f "$CUSTOM_DIR/super-linter.env" ]; then
   set -a
   # shellcheck disable=SC1090
   . "$CUSTOM_DIR/super-linter.env"
   set +a
+fi
+
+if [ "$_had_default_branch" -eq 1 ]; then
+  export DEFAULT_BRANCH="$_default_branch_from_runtime"
 fi
 
 export LINTER_RULES_PATH="$WORK_DIR"

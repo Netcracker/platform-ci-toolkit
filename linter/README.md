@@ -36,5 +36,8 @@ make test-python                            # Run Python tests (skipped if PY_BU
 make test-java                              # Auto-detect Maven modules and run mvn test when Java/XML files changed
 ```
 
-For full usage instructions, including CI and GitHub Actions examples, see `docs/usage.md`.
-See `templates/Makefile` for the consumer template, `docs/usage.md` for usage instructions, and `super-linter.env` for baseline environment variables.
+For full usage instructions, including CI and GitHub Actions examples, see [`docs/usage.md`](docs/usage.md).
+
+For which Super-Linter checks are enabled or disabled, plus `test-go` / `test-python` / `test-java` and skillcheck, see [`docs/supported-checks.md`](docs/supported-checks.md).
+
+See `templates/Makefile` for the consumer template and `super-linter.env` for baseline environment variables.
