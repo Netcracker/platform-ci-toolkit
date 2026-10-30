@@ -30,9 +30,9 @@ export SKILLCHECK_PATTERNS
 
 # Optional: synchronize this Makefile from the upstream template.
 # Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.
-sync-linter-makefile:
+sync-precheck-makefile:
 ifdef PLATFORM_CI_TOOLKIT_RAW_URL
-	curl -fsSL -o $(REPO_ROOT)/Makefile.linter $(PLATFORM_CI_TOOLKIT_RAW_URL)
+	curl -fsSL -o $(REPO_ROOT)/Makefile.precheck $(PLATFORM_CI_TOOLKIT_RAW_URL)
 else
 	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile"
 	@exit 1
@@ -48,7 +48,7 @@ LINTER_ENV ?= \
 	-e FILTER_REGEX_EXCLUDE \
 	-e GOPROXY \
 	$(if $(GOMODCACHE),-e GOMODCACHE=$(GOMODCACHE)) \
-	-e SKILLCHECK_PATTERNS=$(SKILLCHECK_PATTERNS)
+	-e SKILLCHECK_PATTERNS="$(SKILLCHECK_PATTERNS)"
 
 # FILTER_REGEX_INCLUDE can be set to limit Super-Linter to a subset of files,
 # for example: make lint FILTER_REGEX_INCLUDE=services/backuper-service/.*

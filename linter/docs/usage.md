@@ -48,13 +48,13 @@ There are two ways to consume the template. Prefer the include pattern so the sh
 
 #### Include a vendored copy (recommended)
 
-1. Copy `templates/Makefile` into the consumer repository as `Makefile.linter`.
-2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `Makefile.linter`.
+1. Copy `templates/Makefile` into the consumer repository as `Makefile.precheck`.
+2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `Makefile.precheck`.
 
 Example wrapper:
 
 ```make
-# Consumer Makefile (overrides only). Do not edit Makefile.linter.
+# Consumer Makefile (overrides only). Do not edit Makefile.precheck.
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= common_linter_integration
 DEFAULT_BRANCH ?= main
@@ -66,22 +66,22 @@ DEFAULT_BRANCH ?= main
 PYTHON ?= python3
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
-include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))Makefile.linter
+include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))Makefile.precheck
 ```
 
-`Makefile.linter` must stay an unmodified copy of `templates/Makefile`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
+`Makefile.precheck` must stay an unmodified copy of `templates/Makefile`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
 
 Refresh the vendored file when the upstream template changes:
 
 ```bash
-make sync-linter-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-templates/Makefile>
+make sync-precheck-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-templates/Makefile>
 ```
 
-`sync-linter-makefile` writes `Makefile.linter` at the repository root.
+`sync-precheck-makefile` writes `Makefile.precheck` at the repository root.
 
 #### Copy the template as the main Makefile
 
-Copy `templates/Makefile` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `Makefile.linter`.
+Copy `templates/Makefile` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `Makefile.precheck`.
 
 ### Run on changed files
 
@@ -439,7 +439,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod` so CI systems can cache it inside the repository. |
 | `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
-| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (or `Makefile.linter`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
+| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `Makefile.precheck`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
 
 Additional Super-Linter variables can be set via `prechecks/custom-liners/super-linter.env` in the consumer repository.
 
