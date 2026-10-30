@@ -54,9 +54,7 @@ There are two ways to consume the template. Prefer the include pattern so the sh
 Example wrapper:
 
 ```make
-# Consumer Makefile (overrides only)
-REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-
+# Consumer Makefile (overrides only). Do not edit Makefile.linter.
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= common_linter_integration
 DEFAULT_BRANCH ?= main
@@ -68,15 +66,10 @@ DEFAULT_BRANCH ?= main
 PYTHON ?= python3
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
-# Evaluate against this checkout before Makefile.linter can overwrite REPO_ROOT.
-GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -exec dirname {} \;)
-JAVA_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name pom.xml -not -path '*/target/*' -exec dirname {} \;)
-
-include $(REPO_ROOT)Makefile.linter
-
-# Point REPO_ROOT back at this repository when Makefile.linter used lastword.
-REPO_ROOT := $(dir $(abspath $(firstword $(MAKEFILE_LIST))))
+include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))Makefile.linter
 ```
+
+`Makefile.linter` must stay an unmodified copy of `templates/Makefile`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
 
 Refresh the vendored file when the upstream template changes:
 
