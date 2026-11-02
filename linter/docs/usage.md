@@ -68,10 +68,10 @@ DEFAULT_BRANCH ?= main
 
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
-include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))Makefile.precheck
+include Makefile.precheck
 ```
 
-`Makefile.precheck` must stay an unmodified copy of `templates/Makefile`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
+Run `make` from the repository root. `Makefile.precheck` must stay an unmodified copy of `templates/Makefile`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
 
 Refresh the vendored file when the upstream template changes:
 
@@ -351,8 +351,7 @@ jobs:
         run: make lint
         env:
           RUN_LOCAL: "true"
-          DEFAULT_BRANCH: "master"
-          VALIDATE_ALL_CODEBASE: "false"
+          # DEFAULT_BRANCH comes from the consumer Makefile (exported by Makefile.precheck).
 
   tests:
     runs-on: ubuntu-latest
@@ -404,14 +403,13 @@ jobs:
       - name: Run tests
         run: make test
         env:
-          DEFAULT_BRANCH: "master"
           # Set GOPROXY if the default public proxy is unreachable or you need a private module proxy.
           GOPROXY: ${{ vars.GOPROXY }}
           PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
           MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/.m2/repository"
 ```
 
-The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`.
+The common linter image already includes Maven and OpenJDK 25; do not install them in the workflow. The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`. Set `DEFAULT_BRANCH` in the consumer Makefile when it is not `master`; the workflow does not need to redefine it.
 
 For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
 
