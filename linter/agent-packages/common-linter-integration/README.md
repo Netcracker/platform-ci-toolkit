@@ -21,4 +21,4 @@ Pin `<ref>` to a tag once one exists. Use a branch only while a change is in rev
 
 ## Source of truth
 
-The skill summarizes `linter/docs/usage.md` and `linter/templates/Makefile.common.mk`. When those change, update the skill in the same pull request.
+The skill summarizes `linter/docs/usage.md` and `linter/templates/common.mk`. When those change, update the skill in the same pull request.

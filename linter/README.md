@@ -40,4 +40,4 @@ For full usage instructions, including CI and GitHub Actions examples, see [`doc
 
 For which Super-Linter checks are enabled or disabled, plus `test-go` / `test-python` / `test-java` and skillcheck, see [`docs/supported-checks.md`](docs/supported-checks.md).
 
-See `templates/Makefile.common.mk` for the consumer template and `super-linter.env` for baseline environment variables.
+See `templates/common.mk` for the consumer template and `super-linter.env` for baseline environment variables.

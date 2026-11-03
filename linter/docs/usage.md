@@ -2,7 +2,7 @@
 
 This document explains how to use the `platform-ci-toolkit` common linter locally, in CI pipelines, and in GitHub Actions workflows.
 
-The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories either copy `templates/Makefile.common.mk` as their own `Makefile`, or include it from a thin wrapper so the same targets work locally and in CI.
+The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories either copy `templates/common.mk` as their own `Makefile`, or include it from a thin wrapper so the same targets work locally and in CI.
 
 ## Default linters
 
@@ -27,7 +27,7 @@ Override `DEFAULT_BRANCH` via the Makefile, CI job variables, or `docker -e` (se
 ### Prerequisites
 
 - Docker installed and running.
-- A consumer `Makefile` based on `templates/Makefile.common.mk` copied into the consumer repository, or a wrapper that includes the template.
+- A consumer `Makefile` based on `templates/common.mk` copied into the consumer repository, or a wrapper that includes the template.
 - The repository root mounted at `/tmp/lint` inside the container (handled by the Makefile).
 
 ### Makefile targets
@@ -50,16 +50,16 @@ There are two ways to consume the template. Prefer the include pattern so the sh
 
 #### Include a vendored copy (recommended)
 
-1. Copy `templates/Makefile.common.mk` into the consumer repository as `Makefile.common`.
-2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `Makefile.common`.
+1. Copy `templates/common.mk` into the consumer repository as `common.mk`.
+2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `common.mk`.
 
 Example wrapper:
 
 ```make
-# Consumer Makefile (overrides only). Do not edit Makefile.common.
+# Consumer Makefile (overrides only). Do not edit common.mk.
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= common_linter_integration
-# Override when the repo default branch is not master (exported by Makefile.common).
+# Override when the repo default branch is not master (exported by common.mk).
 DEFAULT_BRANCH ?= main
 
 # Override only when this repo needs extra skill paths or a different layout.
@@ -68,22 +68,16 @@ DEFAULT_BRANCH ?= main
 
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
-include Makefile.common
+include common.mk
 ```
 
-Run `make` from the repository root. `Makefile.common` must stay an unmodified copy of `templates/Makefile.common.mk`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
+Run `make` from the repository root. `common.mk` must stay an unmodified copy of `templates/common.mk`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
 
-Refresh the vendored file when the upstream template changes:
-
-```bash
-make sync-precheck-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-templates/Makefile.common.mk>
-```
-
-`sync-precheck-makefile` writes `Makefile.common` at the repository root.
+Refresh the vendored file by copying `templates/common.mk` over it again when the upstream template changes.
 
 #### Copy the template as the main Makefile
 
-Copy `templates/Makefile.common.mk` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `Makefile.common`.
+Copy `templates/common.mk` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `common.mk`.
 
 ### Run on changed files
 
@@ -101,7 +95,7 @@ make lint DEFAULT_BRANCH=main
 # DEFAULT_BRANCH ?= main
 ```
 
-`Makefile.common` exports `DEFAULT_BRANCH` so CI `make lint` / `make test` pass it into `run.sh`. Override only the value in the consumer Makefile (`DEFAULT_BRANCH ?= main`); do not re-declare `export`. `run.sh` also restores a caller-set `DEFAULT_BRANCH` after loading env files so the image default does not replace it.
+`common.mk` exports `DEFAULT_BRANCH` so CI `make lint` / `make test` pass it into `run.sh`. Override only the value in the consumer Makefile (`DEFAULT_BRANCH ?= main`); do not re-declare `export`. `run.sh` also restores a caller-set `DEFAULT_BRANCH` after loading env files so the image default does not replace it.
 
 ### Run on a subset of files
 
@@ -351,7 +345,7 @@ jobs:
         run: make lint
         env:
           RUN_LOCAL: "true"
-          # DEFAULT_BRANCH comes from the consumer Makefile (exported by Makefile.common).
+          # DEFAULT_BRANCH comes from the consumer Makefile (exported by common.mk).
 
   tests:
     runs-on: ubuntu-latest
@@ -437,7 +431,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod`; CI jobs can override it (for example `$CI_PROJECT_DIR/.go/pkg/mod`) and cache that path. Locally, `make lint` passes it to the container when set. |
 | `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
-| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `Makefile.common`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
+| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `common.mk`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
 
 Optional: set other Super-Linter knobs in `prechecks/custom-liners/super-linter.env` (merges over the image baseline). Use Makefile / CI / `docker -e` for `DEFAULT_BRANCH`.
 

@@ -1,6 +1,6 @@
 ---
 name: integrate-common-linter
-description: Integrate the platform-ci-toolkit common linter (Super-Linter plus skillcheck) into a consumer repository, locally and in GitHub Actions or GitLab CI. Use when adding, migrating, or debugging `make lint`, `make test`, `Makefile.common`, or a lint/test CI job.
+description: Integrate the platform-ci-toolkit common linter (Super-Linter plus skillcheck) into a consumer repository, locally and in GitHub Actions or GitLab CI. Use when adding, migrating, or debugging `make lint`, `make test`, `common.mk`, or a lint/test CI job.
 ---
 
 # Integrate the common linter into a consumer repository
@@ -16,17 +16,13 @@ language-specific test images. A consumer repository does not configure linters 
    Then read the matching reference: [GitHub Actions](references/github-actions.md) or
    [GitLab CI](references/gitlab-ci.md).
 2. Detect the repository facts that feed the Makefile overrides (see the table below).
-3. Vendor `Makefile.common` and write the thin wrapper `Makefile` (next section).
+3. Vendor `common.mk` and write the thin wrapper `Makefile` (next section).
 4. Add or update the CI jobs from the reference. Reuse the existing CI structure; do not replace it.
 5. Verify with `make lint` locally (needs Docker), then confirm the CI jobs by reading their logs.
 
 ## Consumer Makefile
 
-`Makefile.common` is an unmodified copy of `linter/templates/Makefile.common.mk`. Never edit it; refresh it with:
-
-```bash
-make sync-precheck-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-linter/templates/Makefile.common.mk>
-```
+`common.mk` is an unmodified copy of `linter/templates/common.mk`. Never edit it; refresh it by copying `linter/templates/common.mk` over it again.
 
 If the repository already has a `Makefile`, keep its existing targets and add the overrides above the `include`.
 Put every repo-specific value in the wrapper:
@@ -35,7 +31,7 @@ Put every repo-specific value in the wrapper:
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= latest
 DEFAULT_BRANCH ?= main
-include Makefile.common
+include common.mk
 ```
 
 ## Detect before overriding
@@ -59,7 +55,7 @@ include Makefile.common
   `make`. Without the default branch ref, Super-Linter cannot compute changed files and the test targets run
   everything.
 - `RUN_LOCAL=true` is required outside the Super-Linter GitHub Action, in every CI system.
-- `CI=true` selects the in-container recipes in `Makefile.common`. Both GitHub and GitLab set it; never set it
+- `CI=true` selects the in-container recipes in `common.mk`. Both GitHub and GitLab set it; never set it
   locally.
 - Use `make lint` and `make test` as separate CI jobs so they run in parallel. `make verify` runs both serially.
 - Keep Go, pip and Maven caches inside the repository (`.go/pkg/mod`, `.pip-cache`, `.m2/repository`) so CI cache
