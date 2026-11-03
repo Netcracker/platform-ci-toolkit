@@ -81,7 +81,7 @@ These are implemented by `templates/common.mk` / `common.mk` and `run.sh`, not b
 
 | Item | Detail |
 | --- | --- |
-| Discovery | `go.mod` files under `REPO_ROOT` (excluding `vendor/`), or `GO_TEST_MODULES` override |
+| Discovery | `go.mod` files under `REPO_ROOT` (excluding `vendor/` and `.go/`), or `GO_TEST_MODULES` override |
 | Command | `go test ./...` per module that has `*_test.go` |
 | Skip | No `.go` / `go.mod` / `.sum` changes against `DEFAULT_BRANCH`, or no modules / no tests |
 

@@ -41,6 +41,7 @@ LINTER_ENV ?= \
 	-e FILTER_REGEX_INCLUDE \
 	-e FILTER_REGEX_EXCLUDE \
 	-e GOPROXY \
+	-e GOSUMDB \
 	$(if $(GOMODCACHE),-e GOMODCACHE=$(GOMODCACHE)) \
 	-e SKILLCHECK_PATTERNS="$(SKILLCHECK_PATTERNS)"
 
@@ -59,8 +60,9 @@ LINTER_RUN ?= docker run --rm \
 # GO_TEST_MODULES is auto-detected from go.mod files. Set it explicitly to
 # override. When a default branch is available and no .go/.mod/.sum files
 # changed, Go tests are skipped. Otherwise go test ./... runs in every detected
-# module.
-GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -exec dirname {} \;)
+# module. Exclude vendor/ and the in-repo Go module cache (.go/), which CI sets
+# as GOMODCACHE (for example $CI_PROJECT_DIR/.go/pkg/mod).
+GO_TEST_MODULES ?= $(shell find $(REPO_ROOT) -name go.mod -not -path '*/vendor/*' -not -path '*/.go/*' -exec dirname {} \;)
 # Python interpreter to use for test-python. Override if only `python` is
 # available on the host or in the CI container.
 PYTHON ?= python3
