@@ -42,10 +42,14 @@ Replace `main` with the repository default branch. The image tag must match `LIN
 
 ## Tests job
 
-Add a second job `tests` only when the repository has Go, Python, or Java tests. It uses a language-specific image
-that provides `make`, and runs `make test`. Add only the cache steps and env that apply:
+Add a `tests` job only when the repository has Go, Python, or Java tests. Use a matrix with one entry per language
+(`target`: `test-go`, `test-python`, `test-java`; `image`: `golang:<go.mod version>`, `python:<version>`,
+`maven:3-eclipse-temurin-<jdk>`). Do not run tests in the linter image. Each job runs `make <target>` in its own
+image, which must provide `make` and `git` (install them first if missing; see `docs/usage.md` for the full example).
+Add only the matrix entries, cache steps and env that apply:
 
-- Go: cache `.go/pkg/mod` keyed on `hashFiles('**/go.sum')`.
+- Go: cache `.go/pkg/mod` keyed on `hashFiles('**/go.sum')` and set `GOMODCACHE` to
+  `${{ github.workspace }}/.go/pkg/mod`.
 - Python: cache `.pip-cache` keyed on `hashFiles('**/requirements*.txt')` and set `PIP_CACHE_DIR` to
   `${{ github.workspace }}/.pip-cache`.
 - Maven: cache `.m2/repository` keyed on `hashFiles('**/pom.xml')` and set `MAVEN_OPTS` to
@@ -54,7 +58,7 @@ that provides `make`, and runs `make test`. Add only the cache steps and env tha
   the repository id in `pom.xml`, using `github.actor` and `secrets.GITHUB_TOKEN`.
 - `GOPROXY: ${{ vars.GOPROXY }}` when the public proxy is unreachable or a private proxy is required.
 
-The linter image has no Maven or Java. Run the `tests` job in a language-specific image (or use `actions/setup-java`).
+The linter image has no Maven or Java; the Maven image supplies both.
 
 ## Replacing existing jobs
 

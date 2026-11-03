@@ -33,12 +33,12 @@ SKILLCHECK_PATTERNS ?= agent-packages/*/.apm/skills
 export SKILLCHECK_PATTERNS
 
 # Optional: synchronize this Makefile from the upstream template.
-# Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.
+# Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.common.mk.
 sync-precheck-makefile:
 ifdef PLATFORM_CI_TOOLKIT_RAW_URL
-	curl -fsSL -o $(REPO_ROOT)/Makefile.precheck $(PLATFORM_CI_TOOLKIT_RAW_URL)
+	curl -fsSL -o $(REPO_ROOT)/Makefile.common $(PLATFORM_CI_TOOLKIT_RAW_URL)
 else
-	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile"
+	@echo "Set PLATFORM_CI_TOOLKIT_RAW_URL to the raw URL of linter/templates/Makefile.common.mk"
 	@exit 1
 endif
 

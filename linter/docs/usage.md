@@ -2,7 +2,7 @@
 
 This document explains how to use the `platform-ci-toolkit` common linter locally, in CI pipelines, and in GitHub Actions workflows.
 
-The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories either copy `templates/Makefile` as their own `Makefile`, or include it from a thin wrapper so the same targets work locally and in CI.
+The common linter image is published as `ghcr.io/netcracker/linter` and is based on GitHub Super-Linter v9. It also includes the `skillcheck` utility for validating Agent Skills. Consumer repositories either copy `templates/Makefile.common.mk` as their own `Makefile`, or include it from a thin wrapper so the same targets work locally and in CI.
 
 ## Default linters
 
@@ -27,7 +27,7 @@ Override `DEFAULT_BRANCH` via the Makefile, CI job variables, or `docker -e` (se
 ### Prerequisites
 
 - Docker installed and running.
-- A consumer `Makefile` based on `templates/Makefile` copied into the consumer repository, or a wrapper that includes the template.
+- A consumer `Makefile` based on `templates/Makefile.common.mk` copied into the consumer repository, or a wrapper that includes the template.
 - The repository root mounted at `/tmp/lint` inside the container (handled by the Makefile).
 
 ### Makefile targets
@@ -50,16 +50,16 @@ There are two ways to consume the template. Prefer the include pattern so the sh
 
 #### Include a vendored copy (recommended)
 
-1. Copy `templates/Makefile` into the consumer repository as `Makefile.precheck`.
-2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `Makefile.precheck`.
+1. Copy `templates/Makefile.common.mk` into the consumer repository as `Makefile.common`.
+2. Keep a thin consumer `Makefile` that sets only the overrides this repository needs, then includes `Makefile.common`.
 
 Example wrapper:
 
 ```make
-# Consumer Makefile (overrides only). Do not edit Makefile.precheck.
+# Consumer Makefile (overrides only). Do not edit Makefile.common.
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= common_linter_integration
-# Override when the repo default branch is not master (exported by Makefile.precheck).
+# Override when the repo default branch is not master (exported by Makefile.common).
 DEFAULT_BRANCH ?= main
 
 # Override only when this repo needs extra skill paths or a different layout.
@@ -68,22 +68,22 @@ DEFAULT_BRANCH ?= main
 
 PY_BUILD ?= PYTHONPATH=tests/robot/lib $(PYTHON) -m pip install -r tests/robot/requirements.txt
 
-include Makefile.precheck
+include Makefile.common
 ```
 
-Run `make` from the repository root. `Makefile.precheck` must stay an unmodified copy of `templates/Makefile`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
+Run `make` from the repository root. `Makefile.common` must stay an unmodified copy of `templates/Makefile.common.mk`. `REPO_ROOT` is set there with `firstword`, so it resolves to this consumer `Makefile` when included. Put all repo-specific values in the wrapper above.
 
 Refresh the vendored file when the upstream template changes:
 
 ```bash
-make sync-precheck-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-templates/Makefile>
+make sync-precheck-makefile PLATFORM_CI_TOOLKIT_RAW_URL=<raw-url-to-templates/Makefile.common.mk>
 ```
 
-`sync-precheck-makefile` writes `Makefile.precheck` at the repository root.
+`sync-precheck-makefile` writes `Makefile.common` at the repository root.
 
 #### Copy the template as the main Makefile
 
-Copy `templates/Makefile` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `Makefile.precheck`.
+Copy `templates/Makefile.common.mk` into the consumer repository as `Makefile` and adjust the variables at the top. Use this when you do not want a separate `Makefile.common`.
 
 ### Run on changed files
 
@@ -101,7 +101,7 @@ make lint DEFAULT_BRANCH=main
 # DEFAULT_BRANCH ?= main
 ```
 
-`Makefile.precheck` exports `DEFAULT_BRANCH` so CI `make lint` / `make test` pass it into `run.sh`. Override only the value in the consumer Makefile (`DEFAULT_BRANCH ?= main`); do not re-declare `export`. `run.sh` also restores a caller-set `DEFAULT_BRANCH` after loading env files so the image default does not replace it.
+`Makefile.common` exports `DEFAULT_BRANCH` so CI `make lint` / `make test` pass it into `run.sh`. Override only the value in the consumer Makefile (`DEFAULT_BRANCH ?= main`); do not re-declare `export`. `run.sh` also restores a caller-set `DEFAULT_BRANCH` after loading env files so the image default does not replace it.
 
 ### Run on a subset of files
 
@@ -331,7 +331,7 @@ before_script:
 
 ### GitHub Actions
 
-Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel; run `make test` in a job whose image matches the language under test:
+Use the published image in a workflow and disable the entry point. The `lint` job uses the linter image. The `tests` job is a matrix that runs each `make test-*` target in its language-specific image, in parallel with lint. Keep only the matrix entries for languages the repository has:
 
 ```yaml
 jobs:
@@ -351,45 +351,53 @@ jobs:
         run: make lint
         env:
           RUN_LOCAL: "true"
-          # DEFAULT_BRANCH comes from the consumer Makefile (exported by Makefile.precheck).
+          # DEFAULT_BRANCH comes from the consumer Makefile (exported by Makefile.common).
 
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: test-go
+            image: golang:1.27
+            cache_path: .go/pkg/mod
+            cache_files: "**/go.sum"
+          - target: test-python
+            image: python:3.14
+            cache_path: .pip-cache
+            cache_files: "**/requirements*.txt"
+          - target: test-java
+            image: maven:3-eclipse-temurin-25
+            cache_path: .m2/repository
+            cache_files: "**/pom.xml"
     container:
-      image: ghcr.io/netcracker/linter:latest
-      options: --entrypoint=""
+      image: ${{ matrix.image }}
     steps:
+      # The test image must provide make and git (full golang/python images do).
+      - name: Install make and git if missing
+        run: |
+          if ! command -v make >/dev/null || ! command -v git >/dev/null; then
+            apt-get update && apt-get install -y --no-install-recommends make git
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Cache Go modules
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: .go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          path: ${{ matrix.cache_path }}
+          key: ${{ matrix.target }}-${{ runner.os }}-${{ hashFiles(matrix.cache_files) }}
           restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Cache Python packages
-        uses: actions/cache@v4
-        with:
-          path: .pip-cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: .m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
+            ${{ matrix.target }}-${{ runner.os }}-
       - name: Configure Git authentication for private Go modules
         run: |
           git config --global url."https://token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - name: Configure Maven settings for GitHub Packages
+        if: matrix.target == 'test-java'
         run: |
           mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<'EOF'
+          cat > ~/.m2/settings.xml <<'XML'
           <settings>
             <servers>
               <server>
@@ -399,17 +407,18 @@ jobs:
               </server>
             </servers>
           </settings>
-          EOF
+          XML
       - name: Run tests
-        run: make test
+        run: make ${{ matrix.target }}
         env:
           # Set GOPROXY if the default public proxy is unreachable or you need a private module proxy.
           GOPROXY: ${{ vars.GOPROXY }}
+          GOMODCACHE: "${{ github.workspace }}/.go/pkg/mod"
           PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
           MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/.m2/repository"
 ```
 
-The common linter image does not include Maven or a JDK; run Java tests in a Maven/JDK image or install a JDK in the workflow. The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`. Set `DEFAULT_BRANCH` in the consumer Makefile when it is not `master`; the workflow does not need to redefine it.
+The common linter image is used for linting only; each matrix entry supplies its own test image. Pin the image versions to what the repository builds with (for example the `go` directive in `go.mod`). The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`. Set `DEFAULT_BRANCH` in the consumer Makefile when it is not `master`; the workflow does not need to redefine it.
 
 For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
 
@@ -434,7 +443,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod`; CI jobs can override it (for example `$CI_PROJECT_DIR/.go/pkg/mod`) and cache that path. Locally, `make lint` passes it to the container when set. |
 | `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
-| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `Makefile.precheck`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
+| `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `Makefile.common`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |
 
 Optional: set other Super-Linter knobs in `prechecks/custom-liners/super-linter.env` (merges over the image baseline). Use Makefile / CI / `docker -e` for `DEFAULT_BRANCH`.
 

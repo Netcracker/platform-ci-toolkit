@@ -2,7 +2,7 @@
 
 This document lists what the common linter image (`ghcr.io/netcracker/linter`) runs when a consumer calls `make lint`, `make test`, or `make verify`.
 
-The image is based on [GitHub Super-Linter](https://github.com/super-linter/super-linter) v9, plus organization defaults in `super-linter.env`, baseline rule files under `prechecks/base-linters/`, and extra targets in `templates/Makefile` (vendored by consumers as `Makefile.precheck`).
+The image is based on [GitHub Super-Linter](https://github.com/super-linter/super-linter) v9, plus organization defaults in `super-linter.env`, baseline rule files under `prechecks/base-linters/`, and extra targets in `templates/Makefile.common.mk` (vendored by consumers as `Makefile.common`).
 
 For how to run these checks locally or in CI, see [usage.md](usage.md).
 
@@ -36,7 +36,7 @@ Important defaults from the image:
 | Variable | Image default | Meaning |
 | --- | --- | --- |
 | `VALIDATE_ALL_CODEBASE` | `false` | Lint files changed against `DEFAULT_BRANCH` (not the whole tree), except for tools that ignore this flag (for example Trivy and Biome in Super-Linter v9). |
-| `DEFAULT_BRANCH` | `master` | Comparison branch. Override in the consumer Makefile (`DEFAULT_BRANCH ?= main`); `Makefile.precheck` exports it. |
+| `DEFAULT_BRANCH` | `master` | Comparison branch. Override in the consumer Makefile (`DEFAULT_BRANCH ?= main`); `Makefile.common` exports it. |
 | `FILTER_REGEX_EXCLUDE` | `^\.go/pkg/mod/.*` | Skip the Go module cache mounted under the repo. |
 | `RUN_LOCAL` | `true` | Required outside GitHub Actions (GitLab and local docker). |
 
@@ -112,7 +112,7 @@ For the complete upstream catalog, see [Supported linters](https://github.com/su
 
 ## Checks outside Super-Linter
 
-These are implemented by `templates/Makefile` / `Makefile.precheck` and `run.sh`, not by Super-Linter’s `VALIDATE_*` flags.
+These are implemented by `templates/Makefile.common.mk` / `Makefile.common` and `run.sh`, not by Super-Linter’s `VALIDATE_*` flags.
 
 ### skillcheck (`make skill-validate`)
 
