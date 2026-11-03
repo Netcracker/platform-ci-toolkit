@@ -374,12 +374,6 @@ jobs:
     container:
       image: ${{ matrix.image }}
     steps:
-      # The test image must provide make and git (full golang/python images do).
-      - name: Install make and git if missing
-        run: |
-          if ! command -v make >/dev/null || ! command -v git >/dev/null; then
-            apt-get update && apt-get install -y --no-install-recommends make git
-          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

@@ -45,7 +45,7 @@ Replace `main` with the repository default branch. The image tag must match `LIN
 Add a `tests` job only when the repository has Go, Python, or Java tests. Use a matrix with one entry per language
 (`target`: `test-go`, `test-python`, `test-java`; `image`: `golang:<go.mod version>`, `python:<version>`,
 `maven:3-eclipse-temurin-<jdk>`). Do not run tests in the linter image. Each job runs `make <target>` in its own
-image, which must provide `make` and `git` (install them first if missing; see `docs/usage.md` for the full example).
+image, which must provide `make` and `git` (the standard images do; see `docs/usage.md` for the full example).
 Add only the matrix entries, cache steps and env that apply:
 
 - Go: cache `.go/pkg/mod` keyed on `hashFiles('**/go.sum')` and set `GOMODCACHE` to
