@@ -37,7 +37,7 @@ Important defaults from the image:
 | --- | --- | --- |
 | `VALIDATE_ALL_CODEBASE` | `false` | Lint files changed against `DEFAULT_BRANCH` (not the whole tree), except for tools that ignore this flag (for example Trivy and Biome in Super-Linter v9). |
 | `DEFAULT_BRANCH` | `master` | Comparison branch. Override in the consumer Makefile (`DEFAULT_BRANCH ?= main`); `common.mk` exports it. |
-| `FILTER_REGEX_EXCLUDE` | `^\.go/pkg/mod/.*` | Skip the Go module cache mounted under the repo. |
+| `FILTER_REGEX_EXCLUDE` | `(^\|/)\.go/pkg/mod/.*` | Skip the Go module cache mounted under the repo. |
 | `RUN_LOCAL` | `true` | Required outside GitHub Actions (GitLab and local docker). |
 
 Upstream reference: [Super-Linter environment variables](https://github.com/super-linter/super-linter/blob/main/README.md#configure-super-linter).
