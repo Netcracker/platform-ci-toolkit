@@ -68,7 +68,13 @@ if [ "$_had_default_branch" -eq 1 ]; then
   export DEFAULT_BRANCH="$_default_branch_from_runtime"
 fi
 
-export LINTER_RULES_PATH="$WORK_DIR"
+# Super-Linter resolves rule files as "${GITHUB_WORKSPACE}/${LINTER_RULES_PATH}/<file>", so an
+# absolute path would be appended to the workspace and never match. Climb out of the workspace with
+# exactly as many "../" segments as /tmp/lint is deep (physical path) to land on WORK_DIR.
+_depth=$(realpath /tmp/lint 2>/dev/null | tr -cd '/' | wc -c | tr -d ' ')
+_up=""
+for _ in $(seq 1 "${_depth:-32}"); do _up="${_up}../"; done
+export LINTER_RULES_PATH="${_up}${WORK_DIR#/}"
 
 warn_if_missing_go_proxy() {
   if [ -n "${GOPROXY:-}" ]; then

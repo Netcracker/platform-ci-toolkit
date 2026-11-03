@@ -54,8 +54,8 @@ These are set to `true` in `linter/super-linter.env`. Each runs only when matchi
 | Java | `JAVA` | Checkstyle (config: `prechecks/base-linters/.checkstyle.xml`). Unit tests still run via `make test-java` in a Maven/JDK image |
 | Python | `PYTHON_RUFF` | ruff (config: `prechecks/base-linters/.ruff.toml`) |
 | YAML | `YAML` | yamllint config: `prechecks/base-linters/.yaml-lint.yml` |
-| Markdown | `MARKDOWN` | `prechecks/base-linters/.markdownlint.yml` |
-| Dockerfile | `DOCKERFILE_HADOLINT` | `prechecks/base-linters/.dockerfilelintrc` |
+| Markdown | `MARKDOWN` | Super-Linter default config |
+| Dockerfile | `DOCKERFILE_HADOLINT` | hadolint (config: `prechecks/base-linters/.hadolint.yaml`, copy of the Super-Linter default) |
 | Renovate | `RENOVATE` | |
 
 Commented out in `super-linter.env` (not active): `VALIDATE_CHECKOV`, `VALIDATE_KUBERNETES_KUBECONFORM`.
@@ -113,11 +113,10 @@ Copied into the container work dir by `run.sh` (consumer `prechecks/custom-liner
 | File | Used by |
 | --- | --- |
 | `.golangci.yml` | Go (`GO` / `GO_MODULES`) |
-| `.markdownlint.yml` | Markdown |
 | `.yaml-lint.yml` | YAML |
-| `.dockerfilelintrc` | Hadolint |
 | `.ruff.toml` | Python (`PYTHON_RUFF`) |
 | `.checkstyle.xml` | Java (`JAVA`, selected via `JAVA_FILE_NAME`) |
+| `.hadolint.yaml` | Dockerfile (`DOCKERFILE_HADOLINT`) |
 
 ---
 
