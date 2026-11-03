@@ -27,9 +27,9 @@ CI often splits this into two jobs (`TARGET: lint` and `TARGET: test`) that shar
 
 ## Super-Linter: how enablement works
 
-The baseline does **not** set `VALIDATE_*=true`. Super-Linter auto-detects languages from the change set (when `VALIDATE_ALL_CODEBASE=false`) and runs the matching linters.
+The baseline is an **allowlist**: `super-linter.env` sets `VALIDATE_*=true` only for the linters listed below, and Super-Linter runs those against matching files in the change set (when `VALIDATE_ALL_CODEBASE=false`). Any linter not listed is off.
 
-This image only sets selected `VALIDATE_*=false` values in `super-linter.env`. Everything else stays on Super-Linter’s default (enabled / auto-detect).
+Super-Linter does not allow a mix of `VALIDATE_*=true` and `VALIDATE_*=false`. To add a linter in a repo, set `VALIDATE_<NAME>=true` in `prechecks/custom-liners/super-linter.env`. Do **not** set `VALIDATE_<NAME>=false` there; remove it from the allowlist instead.
 
 Important defaults from the image:
 
@@ -44,50 +44,14 @@ Upstream reference: [Super-Linter environment variables](https://github.com/supe
 
 ---
 
-## Super-Linter: explicitly disabled in this image
+## Super-Linter: enabled in this image
 
-These are set to `false` in `linter/super-linter.env`:
-
-| Variable | Notes |
-| --- | --- |
-| `VALIDATE_CHECKOV` | Infrastructure-as-code scanner |
-| `VALIDATE_CSS` | |
-| `VALIDATE_HTML` | |
-| `VALIDATE_JAVASCRIPT` | Family disable for JS linting |
-| `VALIDATE_JSCPD` | Copy-paste detection |
-| `VALIDATE_TYPESCRIPT` | Family disable for TS linting |
-| `VALIDATE_RUBY` | |
-| `VALIDATE_PERL` | |
-| `VALIDATE_PHP` | |
-| `VALIDATE_KOTLIN` | |
-| `VALIDATE_JAVA` | Checkstyle (Java **unit tests** still run via `make test-java`) |
-| `VALIDATE_CLOJURE` | |
-| `VALIDATE_COFFEESCRIPT` | |
-| `VALIDATE_CSHARP` | |
-| `VALIDATE_DART` | |
-| `VALIDATE_GOOGLE_JAVA_FORMAT` | |
-| `VALIDATE_LATEX` | |
-| `VALIDATE_LUA` | |
-| `VALIDATE_OBJECTIVE_C` | |
-| `VALIDATE_R` | |
-| `VALIDATE_RUST` | Family disable |
-| `VALIDATE_SCALAFMT` | |
-| `VALIDATE_SNAKEMAKE` | Family disable |
-| `VALIDATE_SQL` | Family disable (includes SQLFluff-style checks) |
-| `VALIDATE_TERRAFORM` | Family disable (fmt / tflint) |
-| `VALIDATE_XML` | |
-
-To turn one of these back on for a single repo, set it in that repo’s optional `prechecks/custom-liners/super-linter.env`, or pass it as a CI / `docker -e` variable (caller values for `DEFAULT_BRANCH` are restored by `run.sh`; other Super-Linter vars follow normal env-file merge rules — see [usage.md](usage.md)).
-
----
-
-## Super-Linter: typically active for NetCracker consumers
-
-Any Super-Linter check that is **not** in the disable list above remains eligible. When matching files appear in the change set, these are the ones most often seen in cloud-backuper / dbaas / operator pipelines:
+These are set to `true` in `linter/super-linter.env`. Each runs only when matching files appear in the change set:
 
 | Area | `VALIDATE_*` (examples) | Tooling |
 | --- | --- | --- |
 | Go | `GO`, `GO_MODULES`, `GO_RELEASER` | golangci-lint (config: `prechecks/base-linters/.golangci.yml`) |
+| Java | `JAVA` (Checkstyle), `GOOGLE_JAVA_FORMAT` | Unit tests still run via `make test-java` in a Maven/JDK image |
 | Python | `PYTHON_PYLINT`, `PYTHON_FLAKE8`, `PYTHON_BLACK`, `PYTHON_ISORT`, `PYTHON_MYPY`, `PYTHON_RUFF`, `PYTHON_RUFF_FORMAT` | flake8 config: `prechecks/base-linters/.flake8` |
 | YAML | `YAML`, `YAML_PRETTIER` | yamllint config: `prechecks/base-linters/.yaml-lint.yml` |
 | Markdown | `MARKDOWN`, `MARKDOWN_PRETTIER` | `prechecks/base-linters/.markdownlint.yml` |
@@ -97,14 +61,12 @@ Any Super-Linter check that is **not** in the disable list above remains eligibl
 | Git / secrets | `GITLEAKS`, `GIT_MERGE_CONFLICT_MARKERS`, `GIT_COMMITLINT` | Commitlint needs a config file or Super-Linter disables it |
 | EditorConfig | `EDITORCONFIG` | |
 | Env files | `ENV` | dotenv-linter |
-| Biome | `BIOME_FORMAT`, `BIOME_LINT` | May scan more than the git diff (Super-Linter v9 behavior) |
-| Trivy | `TRIVY` | May scan more than the git diff; disable per-repo with `VALIDATE_TRIVY=false` if needed |
+| Trivy | `TRIVY` | May scan more than the git diff |
 | GitHub Actions | `GITHUB_ACTIONS`, `GITHUB_ACTIONS_ZIZMOR` | |
 | Kubernetes | `KUBERNETES_KUBECONFORM` | |
 | Renovate | `RENOVATE` | |
 | Natural language | `NATURAL_LANGUAGE` | textlint |
 | Spelling | `SPELL_CODESPELL` | |
-| OpenAPI / Protobuf / Groovy / PowerShell / Ansible / ARM / CloudFormation / GraphQL / Vue / JSX / TSX / C++ / … | corresponding `VALIDATE_*` | Only if those files are present and not covered by a family disable above |
 
 For the complete upstream catalog, see [Supported linters](https://github.com/super-linter/super-linter#supported-linters).
 

@@ -6,12 +6,12 @@ The common linter image is published as `ghcr.io/netcracker/linter` and is based
 
 ## Default linters
 
-The common linter does not enable linters explicitly. Instead, it relies on Super-Linter's auto-detection and only disables languages that are not commonly used in the target repositories.
+The common linter enables a fixed allowlist of linters. Super-Linter does not allow mixing `VALIDATE_*=true` and `VALIDATE_*=false`, so anything not listed is off.
 
-- `super-linter.env` in this repository sets `VALIDATE_<LANGUAGE>=false` for languages such as Java, Kotlin, Terraform, XML, JavaScript, TypeScript, Ruby, PHP, etc.
-- All other Super-Linter v9 languages are auto-detected: when a changed file matches a language, its linters run automatically.
+- `super-linter.env` in this repository sets `VALIDATE_<NAME>=true` for Go, Java, Python, YAML, Markdown, JSON, Dockerfile, shell, Git/secrets, GitHub Actions, Kubernetes and a few others.
+- When a changed file matches an enabled linter, it runs. To add a linter in a repo, set `VALIDATE_<NAME>=true` in `prechecks/custom-liners/super-linter.env`; never set `=false` there.
 
-The catalog of disabled Super-Linter checks, typically active checks, and Makefile test targets (`test-go`, `test-python`, `test-java`, skillcheck) is in [supported-checks.md](supported-checks.md).
+The catalog of enabled Super-Linter checks and Makefile test targets (`test-go`, `test-python`, `test-java`, skillcheck) is in [supported-checks.md](supported-checks.md).
 
 Upstream Super-Linter references:
 
