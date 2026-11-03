@@ -11,18 +11,20 @@ LABEL org.opencontainers.image.description="Common linter image based on Super-L
 
 # Place the Go module cache inside the repository so CI systems can save and
 # restore it. Consumers must set GOPROXY themselves if the default public proxy
-# is unreachable or when private modules are used.
+# is unreachable or when private modules are used. CI jobs may override
+# GOMODCACHE (for example to $CI_PROJECT_DIR/.go/pkg/mod).
 ENV GOMODCACHE="/tmp/lint/.go/pkg/mod"
 
-# Install make, Maven and OpenJDK 25 so the consumer Makefile can run Java tests
-# inside the same container used for linting.
+# Install make so CI can run `make lint` inside the linter container. Language
+# unit tests (Go, Python, Java) run in language-specific test images, so no
+# language runtimes or build tools are added here.
 USER root
 RUN if command -v apk >/dev/null 2>&1; then \
-        apk add --no-cache make openjdk25-jdk maven; \
+        apk add --no-cache make; \
     elif command -v apt-get >/dev/null 2>&1; then \
-        apt-get update && apt-get install -y --no-install-recommends make maven && rm -rf /var/lib/apt/lists/*; \
+        apt-get update && apt-get install -y --no-install-recommends make && rm -rf /var/lib/apt/lists/*; \
     else \
-        echo "No supported package manager found; please install make, Maven and a JDK manually" && exit 1; \
+        echo "No supported package manager found; please install make manually" && exit 1; \
     fi
 
 COPY --from=skillcheck /usr/local/bin/skillcheck /usr/local/bin/skillcheck

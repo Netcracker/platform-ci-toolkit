@@ -229,9 +229,9 @@ When `PY_BUILD` is set, `test-python` performs these steps:
    PYTHON_TEST_CMD := $(PYTHON) -m pytest -q
    ```
 
-`make test-java` auto-detects Maven modules by finding `pom.xml` files (excluding `*/target/*`), checks whether any `.java` or `.xml` files changed against `DEFAULT_BRANCH`, and runs `mvn test` (override with `JAVA_BUILD`) in every detected module. If no `pom.xml` is found or no Java/XML files changed, the target prints a skip message and exits successfully. The common linter image includes Maven and OpenJDK 25, so `make test-java` works out of the box in CI. If a project needs a different JDK version, override the test job to use a Java-enabled image or set `JAVA_BUILD` accordingly.
+`make test-java` auto-detects Maven modules by finding `pom.xml` files (excluding `*/target/*`), checks whether any `.java` or `.xml` files changed against `DEFAULT_BRANCH`, and runs `mvn test` (override with `JAVA_BUILD`) in every detected module. If no `pom.xml` is found or no Java/XML files changed, the target prints a skip message and exits successfully. The common linter image does not include Maven or a JDK. Run `make test-java` in a Maven/JDK test image (set `TEST_IMAGE` on the test job) and set `JAVA_BUILD` if the defaults do not fit.
 
-CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and includes the Go, Python and Java runtimes used by `go test`, the Python test command, and `mvn test`.
+CI pipelines can run lint and tests as two parallel jobs (shown below) or call `make verify` so that lint and tests share a single entry point and a single pass/fail result. The common linter image is based on Super-Linter and is used for linting. Run `make test-go`, `make test-python` and `make test-java` in language-specific test images (for example `golang`, `python`, `maven`); the test image must provide `make`.
 
 ---
 
@@ -317,7 +317,7 @@ Key points:
 - `CI=true` is set automatically by GitLab runners; the consumer Makefile uses it to select the CI branch.
 - `RUN_LOCAL=true` is required because Super-Linter is not running inside GitHub Actions.
 - The common linter expects the repository at `/tmp/lint`. `run.sh` links `/tmp/lint` to `CI_PROJECT_DIR` when needed.
-- The image sets `GOMODCACHE=/tmp/lint/.go/pkg/mod` so CI can cache Go modules inside the repository.
+- The image defaults `GOMODCACHE` to `/tmp/lint/.go/pkg/mod`. CI jobs can override it (for example `$CI_PROJECT_DIR/.go/pkg/mod`) and cache that path; lint and test jobs can share one cache key.
 - Fetch `${DEFAULT_BRANCH}` before `make` so Super-Linter and the test skip logic can compare against it.
 
 If Python tests download packages from a private PyPI index, place a `pip.conf` in the repository and set `PIP_CONFIG_FILE` on the unit-test job (or on `.pre-check-base`).
@@ -331,7 +331,7 @@ before_script:
 
 ### GitHub Actions
 
-Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel; `make test` inside the common linter container runs Go, Python, and Java tests together:
+Use the published image in a workflow and disable the entry point. Two jobs in the same workflow run lint and tests in parallel; run `make test` in a job whose image matches the language under test:
 
 ```yaml
 jobs:
@@ -409,7 +409,7 @@ jobs:
           MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/.m2/repository"
 ```
 
-The common linter image already includes Maven and OpenJDK 25; do not install them in the workflow. The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`. Set `DEFAULT_BRANCH` in the consumer Makefile when it is not `master`; the workflow does not need to redefine it.
+The common linter image does not include Maven or a JDK; run Java tests in a Maven/JDK image or install a JDK in the workflow. The `Configure Maven settings for GitHub Packages` step is only needed when Maven dependencies are published to GitHub Packages under a private `netcracker` repository. The `<id>github</id>` must match the repository ID used in the consumer `pom.xml` for `maven.pkg.github.com/netcracker/*`. Set `DEFAULT_BRANCH` in the consumer Makefile when it is not `master`; the workflow does not need to redefine it.
 
 For private Go modules, adjust the `git config url.<token-url>.insteadOf` line to match your git host and token.
 
@@ -431,7 +431,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `FILTER_REGEX_INCLUDE` | Regex for files to include. Set directly, e.g. `make lint FILTER_REGEX_INCLUDE=...`. |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
 | `GOPROXY` | Go module proxy. Set this in CI when the default public proxy is unreachable or for private modules. |
-| `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod` so CI systems can cache it inside the repository. |
+| `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod`; CI jobs can override it (for example `$CI_PROJECT_DIR/.go/pkg/mod`) and cache that path. Locally, `make lint` passes it to the container when set. |
 | `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
 | `SKILLCHECK_PATTERNS` | Shell globs for skill bundles or individual skills to validate with `skillcheck`. Template default: `agent-packages/*/.apm/skills`. Set overrides in the consumer `Makefile` (not in `Makefile.precheck`); do not re-set this in the CI job env, because that value wins over Makefile `?=`. Set an empty value to skip skill validation. |

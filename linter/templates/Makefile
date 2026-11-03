@@ -5,8 +5,9 @@
 # This Makefile works in two modes:
 #   - Local: it pulls the linter image and runs lint via Docker; tests run on
 #            the host.
-#   - CI:    it runs /usr/local/bin/run.sh directly because the job already
-#            executes inside the linter container; tests run there too.
+#   - CI:    lint runs /usr/local/bin/run.sh directly because the lint job
+#            executes inside the linter container. Tests run in separate jobs
+#            inside a language-specific image (TEST_IMAGE), not the linter.
 
 LINTER_IMAGE ?= ghcr.io/netcracker/linter
 LINTER_TAG ?= latest
@@ -185,10 +186,11 @@ test-java:
 
 ifeq ($(CI),true)
 
-# CI mode: we are already running inside the linter container.
+# CI mode: lint targets run inside the linter container.
 # The repository is mounted at REPO_ROOT (e.g. /builds/...), not /tmp/lint.
-# Link /tmp/lint to the checkout so the Dockerfile's GOMODCACHE setting
-# (/tmp/lint/.go/pkg/mod) resolves inside the repository and CI can save it.
+# Link /tmp/lint to the checkout so Super-Linter and skillcheck find the code.
+# Test targets do not use this: they run in a language image with GOMODCACHE
+# and PIP_CACHE_DIR already pointing into the checkout (see .test-base).
 .PHONY: prepare-ci-workspace lint lint-super-linter skill-validate lint-fix
 
 prepare-ci-workspace:
@@ -217,11 +219,6 @@ skill-validate:
 
 lint-fix:
 	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
-
-# In CI, tests also need /tmp/lint linked before go test uses GOMODCACHE.
-test-go: prepare-ci-workspace
-test-python: prepare-ci-workspace
-test-java: prepare-ci-workspace
 
 else
 

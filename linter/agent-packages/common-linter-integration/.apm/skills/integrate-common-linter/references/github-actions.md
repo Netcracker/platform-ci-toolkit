@@ -42,8 +42,8 @@ Replace `main` with the repository default branch. The image tag must match `LIN
 
 ## Tests job
 
-Add a second job `tests` only when the repository has Go, Python, or Java tests. It uses the same container and
-checkout, and runs `make test`. Add only the cache steps and env that apply:
+Add a second job `tests` only when the repository has Go, Python, or Java tests. It uses a language-specific image
+that provides `make`, and runs `make test`. Add only the cache steps and env that apply:
 
 - Go: cache `.go/pkg/mod` keyed on `hashFiles('**/go.sum')`.
 - Python: cache `.pip-cache` keyed on `hashFiles('**/requirements*.txt')` and set `PIP_CACHE_DIR` to
@@ -54,7 +54,7 @@ checkout, and runs `make test`. Add only the cache steps and env that apply:
   the repository id in `pom.xml`, using `github.actor` and `secrets.GITHUB_TOKEN`.
 - `GOPROXY: ${{ vars.GOPROXY }}` when the public proxy is unreachable or a private proxy is required.
 
-Do not install Maven or Java in the workflow. The image already has them.
+The linter image has no Maven or Java. Run the `tests` job in a language-specific image (or use `actions/setup-java`).
 
 ## Replacing existing jobs
 

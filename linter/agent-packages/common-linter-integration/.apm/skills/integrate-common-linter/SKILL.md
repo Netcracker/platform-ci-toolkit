@@ -5,8 +5,8 @@ description: Integrate the platform-ci-toolkit common linter (Super-Linter plus 
 
 # Integrate the common linter into a consumer repository
 
-The common linter image (`ghcr.io/netcracker/linter`) bundles Super-Linter, `skillcheck`, Go, Python, Maven and
-Java. A consumer repository does not configure linters directly. It vendors one Makefile and runs `make lint` and
+The common linter image (`ghcr.io/netcracker/linter`) bundles Super-Linter and `skillcheck`. Language tests run in
+language-specific test images. A consumer repository does not configure linters directly. It vendors one Makefile and runs `make lint` and
 `make test` identically on a laptop and in CI. Upstream docs: `linter/docs/usage.md` and
 `linter/docs/supported-checks.md` in `Netcracker/platform-ci-toolkit`.
 
