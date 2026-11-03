@@ -8,7 +8,7 @@ The common linter image is published as `ghcr.io/netcracker/linter` and is based
 
 The common linter enables a fixed allowlist of linters. Super-Linter does not allow mixing `VALIDATE_*=true` and `VALIDATE_*=false`, so anything not listed is off.
 
-- `super-linter.env` in this repository sets `VALIDATE_<NAME>=true` for Go, Java, Python, YAML, Markdown, JSON, Dockerfile, shell, Git/secrets, GitHub Actions, Kubernetes and a few others.
+- `super-linter.env` in this repository sets `VALIDATE_<NAME>=true` for Go, Java, Python (ruff), YAML, Markdown, Dockerfile (hadolint) and Renovate.
 - When a changed file matches an enabled linter, it runs. To add a linter in a repo, set `VALIDATE_<NAME>=true` in `prechecks/custom-liners/super-linter.env`; never set `=false` there.
 
 The catalog of enabled Super-Linter checks and Makefile test targets (`test-go`, `test-python`, `test-java`, skillcheck) is in [supported-checks.md](supported-checks.md).

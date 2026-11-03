@@ -48,25 +48,17 @@ Upstream reference: [Super-Linter environment variables](https://github.com/supe
 
 These are set to `true` in `linter/super-linter.env`. Each runs only when matching files appear in the change set:
 
-| Area | `VALIDATE_*` (examples) | Tooling |
+| Area | `VALIDATE_*` | Tooling |
 | --- | --- | --- |
-| Go | `GO`, `GO_MODULES`, `GO_RELEASER` | golangci-lint (config: `prechecks/base-linters/.golangci.yml`) |
-| Java | `JAVA` (Checkstyle), `GOOGLE_JAVA_FORMAT` | Unit tests still run via `make test-java` in a Maven/JDK image |
-| Python | `PYTHON_PYLINT`, `PYTHON_FLAKE8`, `PYTHON_BLACK`, `PYTHON_ISORT`, `PYTHON_MYPY`, `PYTHON_RUFF`, `PYTHON_RUFF_FORMAT` | flake8 config: `prechecks/base-linters/.flake8` |
-| YAML | `YAML`, `YAML_PRETTIER` | yamllint config: `prechecks/base-linters/.yaml-lint.yml` |
-| Markdown | `MARKDOWN`, `MARKDOWN_PRETTIER` | `prechecks/base-linters/.markdownlint.yml` |
+| Go | `GO`, `GO_MODULES` | golangci-lint (config: `prechecks/base-linters/.golangci.yml`) |
+| Java | `JAVA` | Checkstyle (config: `prechecks/base-linters/.checkstyle.xml`). Unit tests still run via `make test-java` in a Maven/JDK image |
+| Python | `PYTHON_RUFF` | ruff (config: `prechecks/base-linters/.ruff.toml`) |
+| YAML | `YAML` | yamllint config: `prechecks/base-linters/.yaml-lint.yml` |
+| Markdown | `MARKDOWN` | `prechecks/base-linters/.markdownlint.yml` |
 | Dockerfile | `DOCKERFILE_HADOLINT` | `prechecks/base-linters/.dockerfilelintrc` |
-| Shell | `BASH`, `BASH_EXEC`, `SHELL_SHFMT` | `prechecks/base-linters/.shellcheckrc` |
-| JSON | `JSON`, `JSON_PRETTIER`, `JSONC`, … | |
-| Git / secrets | `GITLEAKS`, `GIT_MERGE_CONFLICT_MARKERS`, `GIT_COMMITLINT` | Commitlint needs a config file or Super-Linter disables it |
-| EditorConfig | `EDITORCONFIG` | |
-| Env files | `ENV` | dotenv-linter |
-| Trivy | `TRIVY` | May scan more than the git diff |
-| GitHub Actions | `GITHUB_ACTIONS`, `GITHUB_ACTIONS_ZIZMOR` | |
-| Kubernetes | `KUBERNETES_KUBECONFORM` | |
 | Renovate | `RENOVATE` | |
-| Natural language | `NATURAL_LANGUAGE` | textlint |
-| Spelling | `SPELL_CODESPELL` | |
+
+Commented out in `super-linter.env` (not active): `VALIDATE_CHECKOV`, `VALIDATE_KUBERNETES_KUBECONFORM`.
 
 For the complete upstream catalog, see [Supported linters](https://github.com/super-linter/super-linter#supported-linters).
 
@@ -110,7 +102,7 @@ These are implemented by `templates/common.mk` / `common.mk` and `run.sh`, not b
 | Command | `JAVA_BUILD` (default: `mvn -q test`) in each module |
 | Runtime | Common image includes Maven and OpenJDK 25 |
 | Skip | No `.java` / `.xml` changes against `DEFAULT_BRANCH`, or no Maven modules |
-| Note | Super-Linter’s `VALIDATE_JAVA` is **off**; this target is the supported Java check |
+| Note | Checkstyle (`VALIDATE_JAVA`) lints sources; this target runs the unit tests |
 
 ---
 
@@ -121,11 +113,11 @@ Copied into the container work dir by `run.sh` (consumer `prechecks/custom-liner
 | File | Used by |
 | --- | --- |
 | `.golangci.yml` | Go (`GO` / `GO_MODULES`) |
-| `.flake8` | Python flake8 |
 | `.markdownlint.yml` | Markdown |
 | `.yaml-lint.yml` | YAML |
-| `.shellcheckrc` | ShellCheck |
 | `.dockerfilelintrc` | Hadolint |
+| `.ruff.toml` | Python (`PYTHON_RUFF`) |
+| `.checkstyle.xml` | Java (`JAVA`, selected via `JAVA_FILE_NAME`) |
 
 ---
 
