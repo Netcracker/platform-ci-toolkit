@@ -428,7 +428,7 @@ The consumer Makefile forwards the following variables into the linter container
 | `FILTER_REGEX_INCLUDE` | Regex for files to include. Set directly, e.g. `make lint FILTER_REGEX_INCLUDE=...`. |
 | `FILTER_REGEX_EXCLUDE` | Regex for files to exclude. |
 | `GOPROXY` | Go module proxy. Set this in CI when the default public proxy is unreachable or for private modules. |
-| `GOSUMDB` | Go checksum database. The image defaults to `off` so Go does not try to verify against the public `sum.golang.org` (unreachable on many CI runners). |
+| `GOTOOLCHAIN` | Go toolchain selection. CI should set `local` so Go uses the toolchain bundled in the linter image and never downloads one. Without it, a `go.mod` requiring a newer Go (for example `go 1.27.2`) makes Go fetch a toolchain that fails checksum verification on runners without `sum.golang.org` access. The ci-tools `.pre-check-base` templates set this for consumers. |
 | `GOMODCACHE` | Location of the Go module cache. The image defaults to `/tmp/lint/.go/pkg/mod`; CI jobs can override it (for example `$CI_PROJECT_DIR/.go/pkg/mod`) and cache that path. Locally, `make lint` passes it to the container when set. |
 | `PIP_CACHE_DIR` | Location of the pip download/wheel cache. Set this to a project-local path (e.g. `$CI_PROJECT_DIR/.pip-cache` or `${{ github.workspace }}/.pip-cache`) so CI can save/restore it. |
 | `MAVEN_OPTS` | Maven options, e.g. `-Dmaven.repo.local=<project-local-path>/.m2/repository` so CI can cache the Maven local repository inside the repository. |
@@ -438,7 +438,7 @@ Optional: set other Super-Linter knobs in `prechecks/custom-liners/super-linter.
 
 For Python tests, `make test` reads `PIP_CONFIG_FILE` when it runs `pip install`. If your tests need a private PyPI proxy, place a `pip.conf` at the repository root and set `PIP_CONFIG_FILE: "$CI_PROJECT_DIR/pip.conf"` in the CI test job. This is not forwarded into the linter container because it is only used by the test target.
 
-> **Go modules and private repositories:** `run.sh` prints a warning at the start of the lint run if it finds `go.mod` files and `GOPROXY` is not set. This is a heads-up that `GO_MODULES` may fail when downloading private dependencies. Set `GOPROXY` or configure Git authentication to avoid the failure. The image sets `GOSUMDB=off` by default so Go does not contact the public checksum database, which is unreachable on many CI runners.
+> **Go modules and private repositories:** `run.sh` prints a warning at the start of the lint run if it finds `go.mod` files and `GOPROXY` is not set. This is a heads-up that `GO_MODULES` may fail when downloading private dependencies. Set `GOPROXY` or configure Git authentication to avoid the failure. To stop Go from downloading a newer toolchain, set `GOTOOLCHAIN=local`; the ci-tools `.pre-check-base` templates set it for CI runs.
 
 ---
 
