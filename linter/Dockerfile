@@ -10,6 +10,15 @@ ARG SKILLCHECK_IMAGE=ghcr.io/netcracker/skillcheck:common_linter_integration@sha
 ARG GO_VERSION=1.27.2
 ARG GO_SHA256=ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5
 
+# golangci-lint version used by GO / GO_MODULES. Super-Linter ships 2.13.2,
+# which bundles golang.org/x/tools v0.49.0. That x/tools cannot decode the
+# export data version 5 written by Go 1.27.2, so GO_MODULES fails with
+# "could not load export data: ... version 5 is greater than maximum supported
+# version 4". 2.14.0 bumped x/tools to v0.50.0, which reads it; 2.15.0 is the
+# current release. Keep this in step with GO_VERSION.
+ARG GOLANGCI_LINT_VERSION=2.15.0
+ARG GOLANGCI_LINT_SHA256=9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea
+
 FROM ${SKILLCHECK_IMAGE} AS skillcheck
 
 FROM ghcr.io/super-linter/super-linter:${SUPER_LINTER_VERSION}
@@ -18,6 +27,8 @@ FROM ghcr.io/super-linter/super-linter:${SUPER_LINTER_VERSION}
 # below (ARGs are only in scope within the stage where they are declared).
 ARG GO_VERSION
 ARG GO_SHA256
+ARG GOLANGCI_LINT_VERSION
+ARG GOLANGCI_LINT_SHA256
 
 LABEL org.opencontainers.image.source="https://github.com/netcracker/platform-ci-toolkit"
 LABEL org.opencontainers.image.description="Common linter image based on Super-Linter with skillcheck"
@@ -56,6 +67,18 @@ RUN set -eux; \
     go version
 
 ENV PATH="/usr/local/go/bin:${PATH}"
+
+# Replace the golangci-lint inherited from the base image with one that can read
+# the export data produced by the Go toolchain installed above.
+RUN set -eux; \
+    archive="golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz"; \
+    curl -fsSL -o "/tmp/${archive}" \
+        "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/${archive}"; \
+    echo "${GOLANGCI_LINT_SHA256}  /tmp/${archive}" | sha256sum -c -; \
+    tar -xzf "/tmp/${archive}" -C /tmp; \
+    install -m 0755 "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" /usr/bin/golangci-lint; \
+    rm -rf "/tmp/${archive}" "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64"; \
+    golangci-lint --version
 
 COPY --from=skillcheck /usr/local/bin/skillcheck /usr/local/bin/skillcheck
 COPY prechecks/base-linters /etc/platform-ci-toolkit/base-liners
