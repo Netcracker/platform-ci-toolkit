@@ -14,7 +14,8 @@ For how to run these checks locally or in CI, see [usage.md](usage.md).
 make verify
   ├── make lint
   │     ├── Super-Linter          (make lint-super-linter)
-  │     └── skillcheck            (make skill-validate; skipped if SKILLCHECK_PATTERNS is empty)
+  │     ├── skillcheck            (make skill-validate; skipped if SKILLCHECK_PATTERNS is empty)
+  │     └── Helm lint + kubeconform (make lint-helm; skipped if no Chart.yaml found)
   └── make test
         ├── test-go
         ├── test-python
@@ -77,6 +78,20 @@ These are implemented by `templates/common.mk` / `common.mk` and `run.sh`, not b
 | Override | Set `SKILLCHECK_PATTERNS` in the consumer Makefile (export is already in the template for that variable) |
 | Skip | Set `SKILLCHECK_PATTERNS` to empty |
 
+### Helm lint + kubeconform (`make lint-helm`)
+
+| Item | Detail |
+| --- | --- |
+| When | Always part of `make lint` |
+| Discovery | Every directory under the repository containing a `Chart.yaml`. Dependency charts vendored by `helm dependency update` (nested in another chart's own `charts/` directory) are skipped |
+| Steps per chart | `helm lint <chart>`, then `helm template <chart>` piped into `kubeconform -strict -summary -ignore-missing-schemas`, with a `-schema-location` pointing at schemas generated from that chart's own CRDs (if any) |
+| Value profiles | If `<chart>/value-profiles/` exists, `helm template` + kubeconform runs once per `*.yaml`/`*.yml` file in it (`-f <profile>`), instead of once with the chart's default `values.yaml`. A chart without that directory is still validated once, against its default values |
+| Why kubeconform needs `helm template` first | Super-Linter's own `VALIDATE_KUBERNETES_KUBECONFORM` runs kubeconform against raw files, which breaks on unrendered `{{ ... }}` Go-template syntax in chart templates. Rendering first is required for a meaningful check |
+| CRD validation | For every CRD under `<chart>/crds/`, `openapi2jsonschema` (bundled with the `kubeconform` image itself, not built from source) generates a JSON schema, so instances of that chart's own CRDs get structurally validated, not just skipped |
+| Why `-ignore-missing-schemas` stays on | Fallback for any kind that still has no schema anywhere — for example a CRD a chart depends on but does not vendor under its own `crds/` |
+| Skip | No `Chart.yaml` found anywhere in the repository |
+| Override | `HELM_LINT_EXTRA_ARGS`, `HELM_TEMPLATE_EXTRA_ARGS`, `KUBECONFORM_EXTRA_ARGS` env vars, forwarded to the respective command |
+
 ### Go tests (`make test-go`)
 
 | Item | Detail |
@@ -126,6 +141,7 @@ Copied into the container work dir by `run.sh` (consumer `prechecks/custom-liner
 | --- | --- |
 | Super-Linter | Auto-detect all languages **except** the disables listed in `super-linter.env` |
 | skillcheck | Agent Skills under `SKILLCHECK_PATTERNS` |
+| Helm lint + kubeconform | Every chart with a `Chart.yaml`, always run, not change-based |
 | `test-go` / `test-python` / `test-java` | Language unit tests with change-based skip logic |
 
 Keep `super-linter.env` and this document in sync when adding or removing disables.
