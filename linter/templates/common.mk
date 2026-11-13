@@ -191,7 +191,10 @@ prepare-ci-workspace:
 		ln -s "$(REPO_ROOT)" /tmp/lint; \
 	fi
 
-lint: lint-super-linter skill-validate lint-helm
+# A plain `lint: lint-super-linter skill-validate lint-helm` prerequisite list stops at the first one that fails.
+# Run them as independent goals with -k instead, so all three always run.
+lint:
+	@$(MAKE) --no-print-directory -k -f $(firstword $(MAKEFILE_LIST)) lint-super-linter skill-validate lint-helm
 lint-super-linter: prepare-ci-workspace
 skill-validate: prepare-ci-workspace
 lint-helm: prepare-ci-workspace
@@ -229,7 +232,9 @@ ensure-linter-image:
 		docker pull $(LINTER_IMAGE_FULL); \
 	fi
 
-lint: lint-super-linter skill-validate lint-helm
+# See the CI branch above for why this isn't a plain prerequisite list.
+lint:
+	@$(MAKE) --no-print-directory -k -f $(firstword $(MAKEFILE_LIST)) lint-super-linter skill-validate lint-helm
 
 lint-super-linter: ensure-linter-image
 	@echo ""
