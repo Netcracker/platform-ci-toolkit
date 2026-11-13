@@ -23,9 +23,10 @@ The image is built and published by the repository's `CI: Dev Docker Build` work
 From a consumer repository that contains the consumer `Makefile`:
 
 ```bash
-make lint                                   # Run Super-Linter + skill validation (when SKILLCHECK_PATTERNS is set)
+make lint                                   # Run Super-Linter + skill validation (when SKILLCHECK_PATTERNS is set) + Helm lint
 make lint-super-linter                      # Run Super-Linter only
 make skill-validate                         # Run skillcheck only (skips when SKILLCHECK_PATTERNS is empty)
+make lint-helm                              # Run `helm lint` + `helm template` piped into kubeconform for every Helm chart (skips if no Chart.yaml found)
 make lint FILTER_REGEX_INCLUDE=<regex>      # Run lint on a filtered set of files
 make lint-fix                               # Run Super-Linter with auto-fix enabled
 make verify                                 # Run lint and tests

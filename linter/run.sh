@@ -137,6 +137,135 @@ run_skillcheck() {
   return $?
 }
 
+# run_helm_lint discovers every Helm chart under /tmp/lint (any directory
+# containing Chart.yaml), runs `helm lint` on it, then renders it with
+# `helm template` and validates the rendered manifests with kubeconform.
+#
+# Dependency charts vendored by `helm dependency update` (a Chart.yaml nested
+# inside another chart's own charts/ directory) are skipped, since they are
+# already linted as part of their parent chart.
+#
+# kubeconform's default schema catalog does not know about a consumer's own
+# CRDs. For every chart that ships its CRDs under <chart>/crds/, this
+# generates a JSON schema per CRD with openapi2jsonschema and adds that
+# chart's scratch directory as an extra -schema-location, so instances of
+# the chart's own CRDs get structurally validated instead of just skipped.
+# -ignore-missing-schemas stays on as a fallback for any other kind
+# kubeconform still doesn't know
+run_helm_lint() {
+  if [ ! -d /tmp/lint ]; then
+    echo "[platform-ci-toolkit] /tmp/lint not found; skipping helm-lint"
+    return 0
+  fi
+
+  local -a chart_dirs
+  # -L: in CI, /tmp/lint is a symlink to the real checkout (created by
+  # prepare-ci-workspace or by the block at the top of this script). BusyBox
+  # find (used in this image) does not follow a symlinked starting path
+  # without -L, so without it this silently finds zero charts in CI while
+  # still finding them locally, where /tmp/lint is a real bind mount.
+  mapfile -t chart_dirs < <(find -L /tmp/lint -name Chart.yaml -exec dirname {} \; | sort)
+
+  if [ ${#chart_dirs[@]} -eq 0 ]; then
+    echo "[platform-ci-toolkit] No Helm charts (Chart.yaml) found under /tmp/lint; skipping helm-lint"
+    return 0
+  fi
+
+  echo "[platform-ci-toolkit] Found ${#chart_dirs[@]} Helm chart(s):"
+  printf '  %s\n' "${chart_dirs[@]}"
+
+  local rc=0
+  local chart_dir parent_dir grandparent_dir rendered_file err_file
+  local crd_dir crd_file schema_dir
+  local -a schema_location_args
+
+  for chart_dir in "${chart_dirs[@]}"; do
+    parent_dir="$(dirname "${chart_dir}")"
+    grandparent_dir="$(dirname "${parent_dir}")"
+
+    if [ "$(basename "${parent_dir}")" = "charts" ] && [ -f "${grandparent_dir}/Chart.yaml" ]; then
+      echo "[platform-ci-toolkit] Skipping ${chart_dir} (vendored dependency of ${grandparent_dir})"
+      continue
+    fi
+
+    echo ""
+    echo "[platform-ci-toolkit] === helm lint: ${chart_dir} ==="
+    # shellcheck disable=SC2086
+    if ! helm lint ${HELM_LINT_EXTRA_ARGS:-} "${chart_dir}"; then
+      rc=1
+    fi
+
+    # Generate a JSON schema for each CRD this chart ships under crds/.
+    # openapi2jsonschema always writes to the current directory using a
+    # fixed {kind}_{version}.json naming scheme, so it has to run from
+    # inside a scratch directory, one per chart.
+    schema_dir=""
+    crd_dir="${chart_dir}/crds"
+    if [ -d "${crd_dir}" ]; then
+      schema_dir="$(mktemp -d)"
+      while IFS= read -r crd_file; do
+        if ! ( cd "${schema_dir}" && openapi2jsonschema "${crd_file}" >/dev/null ); then
+          echo "[platform-ci-toolkit] WARNING: failed to generate a JSON schema from ${crd_file}"
+        fi
+      done < <(find -L "${crd_dir}" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \))
+    fi
+
+    # value-profiles/ is the standard location for a chart's deployment
+    # value profiles (one values file per profile, e.g. per cloud provider).
+    # When present, every profile is rendered and validated separately,
+    # When absent, fall back to a single run with default values.
+    local -a value_profiles
+    mapfile -t value_profiles < <(find -L "${chart_dir}/value-profiles" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | sort)
+    if [ ${#value_profiles[@]} -eq 0 ]; then
+      value_profiles=("")
+    fi
+
+    local profile_file profile_label
+    local -a profile_args
+    for profile_file in "${value_profiles[@]}"; do
+      if [ -n "${profile_file}" ]; then
+        profile_label="value-profiles/$(basename "${profile_file}")"
+        profile_args=(-f "${profile_file}")
+      else
+        profile_label="default values"
+        profile_args=()
+      fi
+
+      echo ""
+      echo "[platform-ci-toolkit] === helm template + kubeconform: ${chart_dir} (${profile_label}) ==="
+      # kubeconform filters input files by extension; a plain mktemp file has
+      # none, which makes it silently report "0 resource found in 0 file".
+      rendered_file="$(mktemp --suffix=.yaml)"
+      err_file="$(mktemp)"
+
+      # shellcheck disable=SC2086
+      if ! helm template "${chart_dir}" "${profile_args[@]}" ${HELM_TEMPLATE_EXTRA_ARGS:-} >"${rendered_file}" 2>"${err_file}"; then
+        echo "[platform-ci-toolkit] helm template failed for ${chart_dir} (${profile_label}):"
+        cat "${err_file}" >&2
+        rm -f "${rendered_file}" "${err_file}"
+        rc=1
+        continue
+      fi
+
+      schema_location_args=(-schema-location default)
+      if [ -n "${schema_dir}" ]; then
+        schema_location_args+=(-schema-location "${schema_dir}/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json")
+      fi
+
+      # shellcheck disable=SC2086
+      if ! kubeconform -strict -summary "${schema_location_args[@]}" -ignore-missing-schemas ${KUBECONFORM_EXTRA_ARGS:-} "${rendered_file}"; then
+        rc=1
+      fi
+
+      rm -f "${rendered_file}" "${err_file}"
+    done
+
+    [ -n "${schema_dir}" ] && rm -rf "${schema_dir}"
+  done
+
+  return "${rc}"
+}
+
 command="${1:-all}"
 
 case "$command" in
@@ -148,19 +277,25 @@ case "$command" in
     run_skillcheck
     exit $?
     ;;
+  helm-lint)
+    run_helm_lint
+    exit $?
+    ;;
   all)
     run_super_linter
     super_linter_exit=$?
     run_skillcheck
     skillcheck_exit=$?
-    if [ "$super_linter_exit" -ne 0 ] || [ "$skillcheck_exit" -ne 0 ]; then
+    run_helm_lint
+    helm_lint_exit=$?
+    if [ "$super_linter_exit" -ne 0 ] || [ "$skillcheck_exit" -ne 0 ] || [ "$helm_lint_exit" -ne 0 ]; then
       exit 1
     fi
     exit 0
     ;;
   *)
     echo "[platform-ci-toolkit] Unknown command: $command"
-    echo "[platform-ci-toolkit] Usage: run.sh [super-linter|skillcheck|all]"
+    echo "[platform-ci-toolkit] Usage: run.sh [super-linter|skillcheck|helm-lint|all]"
     exit 1
     ;;
 esac

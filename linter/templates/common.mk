@@ -183,7 +183,7 @@ ifeq ($(CI),true)
 # Link /tmp/lint to the checkout so Super-Linter and skillcheck find the code.
 # Test targets do not use this: they run in a language image with GOMODCACHE
 # and PIP_CACHE_DIR already pointing into the checkout (see .test-base).
-.PHONY: prepare-ci-workspace lint lint-super-linter skill-validate lint-fix
+.PHONY: prepare-ci-workspace lint lint-super-linter skill-validate lint-helm lint-fix
 
 prepare-ci-workspace:
 	@if [ ! -e /tmp/lint ]; then \
@@ -191,9 +191,13 @@ prepare-ci-workspace:
 		ln -s "$(REPO_ROOT)" /tmp/lint; \
 	fi
 
-lint: lint-super-linter skill-validate
+# A plain `lint: lint-super-linter skill-validate lint-helm` prerequisite list stops at the first one that fails.
+# Run them as independent goals with -k instead, so all three always run.
+lint:
+	@$(MAKE) --no-print-directory -k -f $(firstword $(MAKEFILE_LIST)) lint-super-linter skill-validate lint-helm
 lint-super-linter: prepare-ci-workspace
 skill-validate: prepare-ci-workspace
+lint-helm: prepare-ci-workspace
 
 lint-super-linter:
 	@echo ""
@@ -209,13 +213,18 @@ skill-validate:
 	echo "=== Running skill validation ==="; \
 	/usr/local/bin/run.sh skillcheck
 
+lint-helm:
+	@echo ""
+	@echo "=== Running Helm lint + kubeconform ==="
+	/usr/local/bin/run.sh helm-lint
+
 lint-fix:
 	FIX_GO=true FIX_MARKDOWN=true FIX_YAML_PRETTIER=true /usr/local/bin/run.sh super-linter
 
 else
 
 # Local mode: run the linter container for lint targets; run tests on the host.
-.PHONY: ensure-linter-image lint lint-super-linter skill-validate lint-fix
+.PHONY: ensure-linter-image lint lint-super-linter skill-validate lint-helm lint-fix
 
 ensure-linter-image:
 	@if [ -z "$$(docker images -q $(LINTER_IMAGE_FULL))" ]; then \
@@ -223,7 +232,9 @@ ensure-linter-image:
 		docker pull $(LINTER_IMAGE_FULL); \
 	fi
 
-lint: lint-super-linter skill-validate
+# See the CI branch above for why this isn't a plain prerequisite list.
+lint:
+	@$(MAKE) --no-print-directory -k -f $(firstword $(MAKEFILE_LIST)) lint-super-linter skill-validate lint-helm
 
 lint-super-linter: ensure-linter-image
 	@echo ""
@@ -238,6 +249,11 @@ skill-validate: ensure-linter-image
 	echo ""; \
 	echo "=== Running skill validation ==="; \
 	$(LINTER_RUN) skillcheck
+
+lint-helm: ensure-linter-image
+	@echo ""
+	@echo "=== Running Helm lint + kubeconform ==="
+	$(LINTER_RUN) helm-lint
 
 lint-fix: ensure-linter-image
 	docker run --rm \

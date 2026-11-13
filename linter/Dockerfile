@@ -2,6 +2,11 @@ ARG SUPER_LINTER_VERSION=slim-v9
 # Pin skillcheck to a public GHCR digest for reproducible builds.
 ARG SKILLCHECK_IMAGE=ghcr.io/netcracker/skillcheck:common_linter_integration@sha256:2a0dcf5e80ebee88aae3cf5c2f9c4425a5cc9ba04da81d32ede265bdf7fffac5
 
+# Super-Linter's own image already bundles kubeconform, but drops
+# openapi2jsonschema (kubeconform's companion tool that turns a CRD's
+# OpenAPI schema into a JSON schema kubeconform can validate against).
+ARG OPENAPI2JSONSCHEMA_IMAGE=ghcr.io/yannh/kubeconform:v0.8.0@sha256:5103f6f5e89061728aad4ad5a250627dd0fc9b2a92eb876f3762677a4222f9e0
+
 # Go toolchain used by GO / GO_MODULES. The Super-Linter image ships an older
 # Go, and consumers may require a newer one in go.mod (for example `go 1.27.2`).
 # Go would then try to download that toolchain, which fails when the runner
@@ -20,6 +25,8 @@ ARG GOLANGCI_LINT_VERSION=2.15.0
 ARG GOLANGCI_LINT_SHA256=9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea
 
 FROM ${SKILLCHECK_IMAGE} AS skillcheck
+
+FROM ${OPENAPI2JSONSCHEMA_IMAGE} AS openapi2jsonschema
 
 FROM ghcr.io/super-linter/super-linter:${SUPER_LINTER_VERSION}
 
@@ -81,6 +88,7 @@ RUN set -eux; \
     golangci-lint --version
 
 COPY --from=skillcheck /usr/local/bin/skillcheck /usr/local/bin/skillcheck
+COPY --from=openapi2jsonschema /openapi2jsonschema /usr/bin/openapi2jsonschema
 COPY prechecks/base-linters /etc/platform-ci-toolkit/base-liners
 COPY super-linter.env /etc/platform-ci-toolkit/super-linter.env
 COPY --chmod=755 run.sh /usr/local/bin/run.sh
