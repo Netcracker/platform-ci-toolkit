@@ -6,3 +6,6 @@ build/
 /tmp
 # skillcheck build output
 skill-validator/dist/
+
+# Go module cache created by make lint
+.go/
